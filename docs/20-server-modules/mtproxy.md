@@ -2,7 +2,7 @@
 
 **Роли:** entry, solo.
 **Зависит от:** base-host, nginx-tls (фронт на 443); в каскаде ещё cascade-awg0 (STUN и подсети Telegram идут через выход).
-**Код:** [agent/mtproxy/](../../agent/mtproxy/), пользователи — `vpnkit clients add|show|del|list <узел> [<имя>] --tg`.
+**Код:** [agent/mtproxy/](../../agent/mtproxy/), пользователи — `krot clients add|show|del|list <узел> [<имя>] --tg`.
 
 Telegram подключается к прокси сам, без VPN-приложения: человек открывает ссылку `tg://proxy…` и нажимает «Подключить прокси». Трафик выглядит как TLS к вашему сайту (FakeTLS), а не-Telegram посетитель видит обычную витрину.
 

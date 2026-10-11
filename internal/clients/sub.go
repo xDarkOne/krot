@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/xDarkOne/vpnkit/internal/inventory"
-	"github.com/xDarkOne/vpnkit/internal/remote"
+	"github.com/xDarkOne/krot/internal/inventory"
+	"github.com/xDarkOne/krot/internal/remote"
 )
 
 // SubCard — клиент подписки: персональная ссылка на подписку и ссылки на входы.
@@ -131,7 +131,7 @@ func RestoreRegistry(ctx context.Context, n *inventory.Node, data []byte, log fu
 		MTProto map[string]any `json:"mtproto"`
 	}
 	if err := json.Unmarshal(data, &u); err != nil || u.Schema != 2 {
-		return fmt.Errorf("это не реестр vpnkit (schema 2)")
+		return fmt.Errorf("это не реестр krot (schema 2)")
 	}
 	cl, err := remote.Dial(n)
 	if err != nil {

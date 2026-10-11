@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/xDarkOne/krot/internal/env"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,17 +18,17 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/xDarkOne/vpnkit/internal/clients"
-	"github.com/xDarkOne/vpnkit/internal/inventory"
-	"github.com/xDarkOne/vpnkit/internal/modexec"
-	"github.com/xDarkOne/vpnkit/internal/remote"
-	"github.com/xDarkOne/vpnkit/internal/secrets"
-	"github.com/xDarkOne/vpnkit/internal/status"
-	"github.com/xDarkOne/vpnkit/internal/wizard"
-	"github.com/xDarkOne/vpnkit/modules"
+	"github.com/xDarkOne/krot/internal/clients"
+	"github.com/xDarkOne/krot/internal/inventory"
+	"github.com/xDarkOne/krot/internal/modexec"
+	"github.com/xDarkOne/krot/internal/remote"
+	"github.com/xDarkOne/krot/internal/secrets"
+	"github.com/xDarkOne/krot/internal/status"
+	"github.com/xDarkOne/krot/internal/wizard"
+	"github.com/xDarkOne/krot/modules"
 )
 
-// App — мост между окном и пакетами пульта. Вся логика та же, что у CLI vpnkit:
+// App — мост между окном и пакетами пульта. Вся логика та же, что у CLI krot:
 // приложение только показывает и спрашивает.
 type App struct {
 	ctx     context.Context
@@ -143,7 +144,7 @@ type State struct {
 	Nodes     []NodeView `json:"nodes"`
 	Vault     string     `json:"vault"` // key | pass | locked | none
 	Error     string     `json:"error"`
-	// Open — «узел/вид/имя»: открыть карточку клиента при запуске (VPNKIT_APP_OPEN;
+	// Open — «узел/вид/имя»: открыть карточку клиента при запуске (KROT_APP_OPEN;
 	// для проверки интерфейса без щелчков мышью)
 	Open string `json:"open"`
 }
@@ -183,7 +184,7 @@ func (a *App) vault() (*secrets.Store, error) {
 func (a *App) GetState() State {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	st := State{Inventory: a.invPath, Vault: "none", Open: os.Getenv("VPNKIT_APP_OPEN"), Nodes: []NodeView{}}
+	st := State{Inventory: a.invPath, Vault: "none", Open: env.Get("APP_OPEN"), Nodes: []NodeView{}}
 	if a.inv == nil {
 		return st
 	}
@@ -212,7 +213,7 @@ var roleOrder = map[string]int{"entry": 0, "solo": 1, "exit": 2}
 // PickInventory — выбрать файл узлов в диалоге.
 func (a *App) PickInventory() (State, error) {
 	p, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title:   "Файл узлов vpnkit (inventory.yaml)",
+		Title:   "Файл узлов krot (inventory.yaml)",
 		Filters: []runtime.FileFilter{{DisplayName: "inventory (*.yaml)", Pattern: "*.yaml;*.yml"}},
 	})
 	if err != nil || p == "" {
@@ -450,7 +451,7 @@ func (a *App) Modules(node string, installed []string) ([]ModuleView, error) {
 	return out, nil
 }
 
-// Install ставит модуль тем же путём, что `vpnkit install`: снимок, «мёртвая рука», проверка,
+// Install ставит модуль тем же путём, что `krot install`: снимок, «мёртвая рука», проверка,
 // откат при ошибке. Ход работы — событиями "install-log" {node, module, line}.
 func (a *App) Install(node, module string) error {
 	n, err := a.node(node)

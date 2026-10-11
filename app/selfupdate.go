@@ -9,7 +9,7 @@ import (
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/xDarkOne/vpnkit/internal/selfupdate"
+	"github.com/xDarkOne/krot/internal/selfupdate"
 )
 
 // Версию и адрес релизов задаёт сборка релиза:

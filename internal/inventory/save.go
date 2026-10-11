@@ -43,7 +43,7 @@ func NewSolo(name, host, keyDir string, names []string) *Inventory {
 // Save пишет inventory атомарно (права 600: адреса и пути к ключам — не секрет, но и не для всех).
 func (inv *Inventory) Save(path string) error {
 	var b bytes.Buffer
-	b.WriteString("# vpnkit: узлы, роли и модули. Секретов здесь нет — они в secrets.age рядом.\n")
+	b.WriteString("# krot: узлы, роли и модули. Секретов здесь нет — они в secrets.age рядом.\n")
 	enc := yaml.NewEncoder(&b)
 	enc.SetIndent(2)
 	if err := enc.Encode(inv); err != nil {

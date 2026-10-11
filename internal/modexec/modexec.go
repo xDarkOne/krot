@@ -15,11 +15,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xDarkOne/vpnkit/agent"
-	"github.com/xDarkOne/vpnkit/internal/inventory"
-	"github.com/xDarkOne/vpnkit/internal/remote"
-	"github.com/xDarkOne/vpnkit/internal/secrets"
-	"github.com/xDarkOne/vpnkit/modules"
+	"github.com/xDarkOne/krot/agent"
+	"github.com/xDarkOne/krot/internal/inventory"
+	"github.com/xDarkOne/krot/internal/remote"
+	"github.com/xDarkOne/krot/internal/secrets"
+	"github.com/xDarkOne/krot/modules"
 )
 
 // Deadman — срок «мёртвой руки» по умолчанию (модуль может задать свой: deadman_sec).

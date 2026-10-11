@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/xDarkOne/vpnkit/internal/remote"
+	"github.com/xDarkOne/krot/internal/remote"
 )
 
 // Facts — пары ключ=значение, которые печатает скрипт сбора.
@@ -104,7 +104,7 @@ func (v *Verdict) add(l Level, format string, a ...any) {
 	v.Findings = append(v.Findings, Finding{l, fmt.Sprintf(format, a...)})
 }
 
-// Контейнеры, которые ставят модули vpnkit (не соседи).
+// Контейнеры, которые ставят модули krot (не соседи).
 var ownContainers = map[string]bool{"mtproxyl": true}
 
 // Минимум RAM (МБ) по ролям, без учёта swap (docs/40-requirements.md).
@@ -175,7 +175,7 @@ func ServerVerdict(f Facts, role string) Verdict {
 		v.add(OK, "публичный IPv4 %s на интерфейсе", pub)
 	}
 	if f["reboot_required"] == "yes" {
-		v.add(Warn, "ждёт перезагрузки на новое ядро (vpnkit reboot проверит DKMS)")
+		v.add(Warn, "ждёт перезагрузки на новое ядро (krot reboot проверит DKMS)")
 	}
 	if f["flush_ruleset"] != "" && f["flush_ruleset"] != "0" {
 		v.add(Warn, "в /etc/nftables.conf стоит flush ruleset — перезапуск nftables сотрёт чужие таблицы (P-01)")

@@ -3,8 +3,8 @@ package modexec
 import (
 	"context"
 
-	"github.com/xDarkOne/vpnkit/internal/inventory"
-	"github.com/xDarkOne/vpnkit/internal/secrets"
+	"github.com/xDarkOne/krot/internal/inventory"
+	"github.com/xDarkOne/krot/internal/secrets"
 )
 
 // Artifact — двоичный файл для узла (пакет), скачанный и проверенный пультом.

@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Крот: выглядывает из норы — туннель под любой стеной -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f8f7f"/>
+      <stop offset="1" stop-color="#0f4f5c"/>
+    </linearGradient>
+    <linearGradient id="soil" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8a5a35"/>
+      <stop offset="1" stop-color="#5b3820"/>
+    </linearGradient>
+    <radialGradient id="fur" cx="0.42" cy="0.32" r="0.75">
+      <stop offset="0" stop-color="#5e5867"/>
+      <stop offset="1" stop-color="#2d2a35"/>
+    </radialGradient>
+    <clipPath id="tile"><rect width="1024" height="1024" rx="228"/></clipPath>
+  </defs>
+  <g clip-path="url(#tile)">
+    <rect width="1024" height="1024" fill="url(#sky)"/>
+    <g transform="translate(512 600) scale(1.22) translate(-512 -600)">
+    <!-- холм земли -->
+    <path d="M-40 760 Q512 520 1064 760 L1064 1064 L-40 1064 Z" fill="url(#soil)"/>
+    <!-- нора -->
+    <ellipse cx="512" cy="742" rx="250" ry="78" fill="#20140c"/>
+    <!-- тело и голова -->
+    <path d="M300 742 C300 520 380 330 512 330 C644 330 724 520 724 742 Z" fill="url(#fur)"/>
+    <!-- морда -->
+    <ellipse cx="512" cy="560" rx="118" ry="96" fill="#7b7383"/>
+    <!-- нос -->
+    <ellipse cx="512" cy="500" rx="58" ry="42" fill="#f08aa0"/>
+    <ellipse cx="496" cy="490" rx="16" ry="10" fill="#ffd0da"/>
+    <!-- тёмные очки: крот работает незаметно -->
+    <g fill="#111015">
+      <rect x="368" y="398" width="112" height="70" rx="30"/>
+      <rect x="544" y="398" width="112" height="70" rx="30"/>
+      <rect x="470" y="418" width="84" height="16" rx="8"/>
+    </g>
+    <path d="M388 414 l40 0" stroke="#ffffff" stroke-opacity="0.55" stroke-width="12" stroke-linecap="round"/>
+    <path d="M564 414 l40 0" stroke="#ffffff" stroke-opacity="0.55" stroke-width="12" stroke-linecap="round"/>
+    <!-- улыбка -->
+    <path d="M478 596 Q512 624 546 596" fill="none" stroke="#2d2a35" stroke-width="12" stroke-linecap="round"/>
+    <!-- лапы на краю норы -->
+    <g fill="#f08aa0">
+      <ellipse cx="368" cy="726" rx="78" ry="44"/>
+      <ellipse cx="656" cy="726" rx="78" ry="44"/>
+    </g>
+    <g stroke="#c9667c" stroke-width="10" stroke-linecap="round">
+      <path d="M326 712 l-10 -22 M352 704 l-4 -26 M380 704 l4 -26 M406 712 l10 -22"/>
+      <path d="M618 712 l-10 -22 M644 704 l-4 -26 M672 704 l4 -26 M698 712 l10 -22"/>
+    </g>
+    <!-- комья земли -->
+    <g fill="#a87447">
+      <circle cx="220" cy="760" r="26"/>
+      <circle cx="812" cy="770" r="22"/>
+      <circle cx="176" cy="800" r="14"/>
+      <circle cx="858" cy="808" r="14"/>
+    </g>
+    </g>
+  </g>
+</svg>

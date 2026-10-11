@@ -1,4 +1,4 @@
-// vpnkit — окно пульта. Данные с узлов попадают в страницу только как текст (textContent):
+// Крот — окно пульта. Данные с узлов попадают в страницу только как текст (textContent):
 // имена клиентов и тексты проверок приходят по сети.
 import {
     GetState, PickInventory, Unlock, Status, Clients,
@@ -249,7 +249,7 @@ async function loadState(s) {
         state.nodes.forEach((n) => refreshStatus(n.name));
         checkUpdates(() => state.nodes.forEach((n) => refreshStatus(n.name)));
     }
-    if (state.open && !opened) {   // VPNKIT_APP_OPEN=узел/вид/имя | install:узел/модуль | wizard[-entry:IP] (проверка без мыши)
+    if (state.open && !opened) {   // KROT_APP_OPEN=узел/вид/имя | install:узел/модуль | wizard[-entry:IP] (проверка без мыши)
         opened = true;
         if (state.open === 'versions') {
             openVersions();
@@ -466,6 +466,6 @@ $('new').addEventListener('click', () => {
     });
 });
 
-window.vpnkitUnlock = Unlock;   // для будущего окна пароля хранилища
+window.krotUnlock = Unlock;   // для будущего окна пароля хранилища
 loadState();
 initAppUpdate();

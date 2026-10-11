@@ -1,4 +1,4 @@
-// Package modules встраивает манифесты модулей (*.yaml) в бинарник vpnkit
+// Package modules встраивает манифесты модулей (*.yaml) в бинарник krot
 // и даёт к ним типизированный доступ.
 package modules
 

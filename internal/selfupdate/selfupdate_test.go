@@ -28,7 +28,7 @@ func TestNewer(t *testing.T) {
 
 func TestReplaceFile(t *testing.T) {
 	dir := t.TempDir()
-	p := filepath.Join(dir, "vpnkit")
+	p := filepath.Join(dir, "krot")
 	os.WriteFile(p, []byte("old"), 0o755)
 	if err := replaceFile([]byte("new"), p, dir); err != nil {
 		t.Fatal(err)

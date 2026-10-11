@@ -9,7 +9,7 @@ import (
 func TestRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "secrets.age")
-	t.Setenv(PassEnv, "correct horse battery staple")
+	t.Setenv("KROT_"+PassEnv, "correct horse battery staple")
 
 	s, err := Create(path)
 	if err != nil {
@@ -43,7 +43,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("ForModule: %v", m)
 	}
 
-	t.Setenv(PassEnv, "wrong password here")
+	t.Setenv("KROT_"+PassEnv, "wrong password here")
 	if _, err := Open(path); err == nil {
 		t.Fatal("неверный пароль должен давать ошибку")
 	}
@@ -71,8 +71,8 @@ func indexOf(a, b string) int {
 
 func TestKeyMode(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("VPNKIT_HOME", dir)
-	t.Setenv(PassEnv, "")
+	t.Setenv("KROT_HOME", dir)
+	t.Setenv("KROT_"+PassEnv, "")
 	id, err := CreateKey()
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestKeyMode(t *testing.T) {
 	if err := s.Save(); err != nil {
 		t.Fatal(err)
 	}
-	s2, err := Open(path) // без пароля: ключ из VPNKIT_HOME
+	s2, err := Open(path) // без пароля: ключ из KROT_HOME
 	if err != nil {
 		t.Fatal(err)
 	}

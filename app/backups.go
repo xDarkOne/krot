@@ -8,9 +8,9 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/xDarkOne/vpnkit/internal/backup"
-	"github.com/xDarkOne/vpnkit/internal/clients"
-	"github.com/xDarkOne/vpnkit/internal/remote"
+	"github.com/xDarkOne/krot/internal/backup"
+	"github.com/xDarkOne/krot/internal/clients"
+	"github.com/xDarkOne/krot/internal/remote"
 )
 
 // BackupFile — копия узла на этом компьютере.

@@ -17,8 +17,8 @@ import (
 	"strings"
 
 	"filippo.io/age"
-	"github.com/xDarkOne/vpnkit/internal/remote"
-	"github.com/xDarkOne/vpnkit/internal/secrets"
+	"github.com/xDarkOne/krot/internal/remote"
+	"github.com/xDarkOne/krot/internal/secrets"
 )
 
 // ByModule — что обязано лежать в копии узла, поставленного установщиком: по меткам
@@ -28,7 +28,7 @@ var ByModule = map[string][]string{
 	"amneziawg":     {},
 	"cascade-awg0":  {"etc/amnezia/amneziawg/awg0.conf", "etc/nftables.d/20-vpnkit-cascade.nft"},
 	"split-routing": {"etc/nftables.d/25-vpnkit-split.nft", "etc/dnsmasq.d/10-vpnkit-split.conf", "usr/local/sbin/vpnkit-ru-nets.sh"},
-	"client-awg":    {"etc/nftables.d/30-vpnkit-client-*.nft", "etc/dnsmasq.d/30-vpnkit-*.conf"},
+	"client-awg":    {"etc/nftables.d/30-krot-client-*.nft", "etc/dnsmasq.d/30-vpnkit-*.conf"},
 	"backup":        {"etc/vpnkit/backup.conf", "etc/vpnkit/backup.recipients", "usr/local/sbin/vpnkit-backup.sh"},
 	"monitoring":    {"etc/vpnkit/watch.conf", "usr/local/sbin/vpnkit-watch.sh"},
 	"nginx-tls":     {"etc/nginx/sites-available/vpnkit-*", "etc/letsencrypt/renewal/*.conf", "etc/nftables.d/40-vpnkit-nginx.nft"},
@@ -119,8 +119,8 @@ func Verify(path, role string) (Report, error) {
 		for _, m := range mods {
 			want = append(want, ByModule[m]...)
 		}
-	} else { // в копии нет меток установщика — значит, это не копия узла vpnkit
-		rep.Missing = append(rep.Missing, markerDir+"* (метки модулей vpnkit)")
+	} else { // в копии нет меток установщика — значит, это не копия узла krot
+		rep.Missing = append(rep.Missing, markerDir+"* (метки модулей krot)")
 	}
 	for _, f := range want {
 		ok := have[f]

@@ -39,7 +39,7 @@ dnsmasq слушает только на loopback. Конфиг включает
 
 - `ru_nets` — `ipv4_addr`, `interval`, `auto-merge`. Изначально содержит частные сети `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`.
 - `ru_domains` — `ipv4_addr`, `timeout 1d`. Наполняется dnsmasq.
-- `prerouting` — `type filter hook prerouting priority mangle; policy accept;`. Сами правила по клиентским интерфейсам добавляют клиентские модули в `30-vpnkit-client-*.nft`: если пакет пришёл с клиентского интерфейса и адрес назначения лежит в `@ru_nets` или `@ru_domains`, ставится метка `0x1`.
+- `prerouting` — `type filter hook prerouting priority mangle; policy accept;`. Сами правила по клиентским интерфейсам добавляют клиентские модули в `30-krot-client-*.nft`: если пакет пришёл с клиентского интерфейса и адрес назначения лежит в `@ru_nets` или `@ru_domains`, ставится метка `0x1`.
 - `dnsout` — `type route hook output priority mangle; policy accept;`. DNS-запросы к зарубежным резолверам из скрипта получают метку `0x3` и уходят в каскад (таблица `200`).
 
 Пакеты с меткой `0x1` уходят напрямую по правилу `ip rule … fwmark 0x1 lookup main`.

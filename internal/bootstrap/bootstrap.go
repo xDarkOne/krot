@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xDarkOne/vpnkit/internal/inventory"
-	"github.com/xDarkOne/vpnkit/internal/remote"
+	"github.com/xDarkOne/krot/internal/inventory"
+	"github.com/xDarkOne/krot/internal/remote"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -27,7 +27,7 @@ import (
 // 50-cloud-init.conf с PasswordAuthentication yes, а sshd берёт первое значение.
 const HardeningPath = "/etc/ssh/sshd_config.d/01-vpnkit-hardening.conf"
 
-const hardening = `# vpnkit: вход только по ключу (bootstrap). Номер < 50 — раньше 50-cloud-init.conf.
+const hardening = `# krot: вход только по ключу (bootstrap). Номер < 50 — раньше 50-cloud-init.conf.
 PermitRootLogin prohibit-password
 PasswordAuthentication no
 KbdInteractiveAuthentication no
@@ -48,7 +48,7 @@ func EnsureKey(path string) (ssh.PublicKey, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	blk, err := ssh.MarshalPrivateKey(priv, "vpnkit")
+	blk, err := ssh.MarshalPrivateKey(priv, "krot")
 	if err != nil {
 		return nil, false, err
 	}
@@ -90,7 +90,7 @@ func Run(ctx context.Context, n *inventory.Node, password string, log func(strin
 	if created {
 		log("создан ключ " + remote.ExpandHome(n.SSH.Key))
 	}
-	authorized := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pub))) + " vpnkit"
+	authorized := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pub))) + " krot"
 
 	// 1. исходная сессия — по паролю (держим до конца)
 	pw := []ssh.AuthMethod{ssh.Password(password), ssh.KeyboardInteractive(func(_, _ string, qs []string, _ []bool) ([]string, error) {

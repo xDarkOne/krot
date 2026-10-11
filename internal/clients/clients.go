@@ -15,10 +15,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/xDarkOne/vpnkit/internal/awgkeys"
-	"github.com/xDarkOne/vpnkit/internal/inventory"
-	"github.com/xDarkOne/vpnkit/internal/remote"
-	"github.com/xDarkOne/vpnkit/internal/secrets"
+	"github.com/xDarkOne/krot/internal/awgkeys"
+	"github.com/xDarkOne/krot/internal/inventory"
+	"github.com/xDarkOne/krot/internal/remote"
+	"github.com/xDarkOne/krot/internal/secrets"
 )
 
 var nameRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
@@ -49,7 +49,7 @@ func LoadInput(n *inventory.Node, iface string, sec *secrets.Store) (Input, erro
 	hpk, ok3 := sec.Get(ns + "hpk")
 	ob, ok4 := sec.Get(ns + "obfs")
 	if !(ok1 && ok2 && ok3 && ok4) {
-		return Input{}, fmt.Errorf("в хранилище нет параметров входа %s на %s — сначала vpnkit install %s client-awg", iface, n.Name, n.Name)
+		return Input{}, fmt.Errorf("в хранилище нет параметров входа %s на %s — сначала krot install %s client-awg", iface, n.Name, n.Name)
 	}
 	pub, err := awgkeys.PublicOf(priv)
 	if err != nil {
@@ -295,7 +295,7 @@ func Add(ctx context.Context, n *inventory.Node, iface, name string, sec *secret
 	}
 	key := n.Name + "/clients/" + name + "/" + in.Iface
 	if _, ok := sec.Get(key); ok {
-		return Profile{}, fmt.Errorf("клиент %s на %s уже есть (vpnkit clients show)", name, in.Iface)
+		return Profile{}, fmt.Errorf("клиент %s на %s уже есть (krot clients show)", name, in.Iface)
 	}
 	cl, err := remote.Dial(n)
 	if err != nil {

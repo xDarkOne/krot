@@ -10,7 +10,7 @@ import (
 
 func TestHostKeyAlgos(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("VPNKIT_HOME", dir)
+	t.Setenv("KROT_HOME", dir)
 	kh := "198.51.100.246 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC\n" +
 		"[10.0.0.5]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI\n"
 	if err := os.WriteFile(filepath.Join(dir, "known_hosts"), []byte(kh), 0o600); err != nil {

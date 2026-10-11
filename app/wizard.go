@@ -10,17 +10,17 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/xDarkOne/vpnkit/internal/alerts"
-	"github.com/xDarkOne/vpnkit/internal/bootstrap"
-	"github.com/xDarkOne/vpnkit/internal/cloudflare"
-	"github.com/xDarkOne/vpnkit/internal/inventory"
-	"github.com/xDarkOne/vpnkit/internal/profile"
-	"github.com/xDarkOne/vpnkit/internal/reach"
-	"github.com/xDarkOne/vpnkit/internal/remote"
-	"github.com/xDarkOne/vpnkit/internal/secrets"
-	"github.com/xDarkOne/vpnkit/internal/status"
-	"github.com/xDarkOne/vpnkit/internal/wizard"
-	"github.com/xDarkOne/vpnkit/modules"
+	"github.com/xDarkOne/krot/internal/alerts"
+	"github.com/xDarkOne/krot/internal/bootstrap"
+	"github.com/xDarkOne/krot/internal/cloudflare"
+	"github.com/xDarkOne/krot/internal/inventory"
+	"github.com/xDarkOne/krot/internal/profile"
+	"github.com/xDarkOne/krot/internal/reach"
+	"github.com/xDarkOne/krot/internal/remote"
+	"github.com/xDarkOne/krot/internal/secrets"
+	"github.com/xDarkOne/krot/internal/status"
+	"github.com/xDarkOne/krot/internal/wizard"
+	"github.com/xDarkOne/krot/modules"
 )
 
 // Мастер первой установки. Пароли root живут только в аргументах вызовов и нигде не
@@ -176,7 +176,7 @@ func (a *App) WCreate(w WSetup) (State, error) {
 	if err := inv.Save(path); err != nil {
 		return State{}, err
 	}
-	// хранилище секретов на ключе пульта: без пароля, ключ — ~/.vpnkit/age.key
+	// хранилище секретов на ключе пульта: без пароля, ключ — ~/.krot/age.key
 	id, err := secrets.LoadKey()
 	if err != nil {
 		return State{}, err
@@ -399,7 +399,7 @@ func (a *App) AlertsSave(token, chats string) error {
 	if err != nil {
 		return err
 	}
-	if err := alerts.Send(a.ctx, n, token, ids, "vpnkit: оповещения подключены ✓"); err != nil {
+	if err := alerts.Send(a.ctx, n, token, ids, "Крот: оповещения подключены ✓"); err != nil {
 		return fmt.Errorf("тестовое сообщение не дошло: %w", err)
 	}
 	if err := sec.Set(alerts.TokenKey, token); err != nil {

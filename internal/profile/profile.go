@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xDarkOne/vpnkit/internal/inventory"
-	"github.com/xDarkOne/vpnkit/internal/modexec"
-	"github.com/xDarkOne/vpnkit/internal/remote"
+	"github.com/xDarkOne/krot/internal/inventory"
+	"github.com/xDarkOne/krot/internal/modexec"
+	"github.com/xDarkOne/krot/internal/remote"
 )
 
 // Component — компонент с закреплённой версией.

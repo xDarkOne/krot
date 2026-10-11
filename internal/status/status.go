@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xDarkOne/vpnkit/internal/inventory"
-	"github.com/xDarkOne/vpnkit/internal/remote"
+	"github.com/xDarkOne/krot/internal/inventory"
+	"github.com/xDarkOne/krot/internal/remote"
 )
 
 // Module — модуль установщика на узле (метка /var/lib/vpnkit/modules/<имя>).

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/xDarkOne/krot/internal/env"
 	"io"
 	"net"
 	"os"
@@ -17,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xDarkOne/vpnkit/internal/inventory"
+	"github.com/xDarkOne/krot/internal/inventory"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 	"golang.org/x/term"
@@ -37,14 +38,8 @@ type Result struct {
 	Code   int
 }
 
-// StateDir — каталог пульта (~/.vpnkit).
-func StateDir() string {
-	if d := os.Getenv("VPNKIT_HOME"); d != "" {
-		return d
-	}
-	h, _ := os.UserHomeDir()
-	return filepath.Join(h, ".vpnkit")
-}
+// StateDir — каталог пульта (~/.krot).
+func StateDir() string { return env.Home() }
 
 // Dial подключается к узлу способом из inventory (ключ или пароль).
 func Dial(n *inventory.Node) (*Client, error) {
@@ -275,7 +270,7 @@ func prompt(q string) (string, error) {
 	return string(b), err
 }
 
-// hostKeyCallback: проверка по ~/.vpnkit/known_hosts; неизвестный ключ
+// hostKeyCallback: проверка по ~/.krot/known_hosts; неизвестный ключ
 // закрепляется при первом подключении (как StrictHostKeyChecking=accept-new),
 // изменившийся — отказ.
 func hostKeyCallback() (ssh.HostKeyCallback, error) {

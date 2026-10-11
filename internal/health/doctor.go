@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xDarkOne/vpnkit/internal/inventory"
-	"github.com/xDarkOne/vpnkit/internal/remote"
-	"github.com/xDarkOne/vpnkit/internal/secrets"
-	"github.com/xDarkOne/vpnkit/modules"
+	"github.com/xDarkOne/krot/internal/inventory"
+	"github.com/xDarkOne/krot/internal/remote"
+	"github.com/xDarkOne/krot/internal/secrets"
+	"github.com/xDarkOne/krot/modules"
 )
 
 // Status — итог проверки.
@@ -169,7 +169,7 @@ func Run(ctx context.Context, inv *inventory.Inventory, n *inventory.Node, cl *r
 			exp, _ := Substitute(h.Expect, vars)
 			c := Check{Module: name, Cmd: secrets.Mask(cmd, mask), Expect: exp}
 			if miss != "" {
-				c.Status, c.Note = Skip, fmt.Sprintf("нет {%s}: задайте в inventory (modules.%s.%s) или в хранилище (vpnkit secrets set %s/%s/%s)", miss, name, miss, n.Name, name, miss)
+				c.Status, c.Note = Skip, fmt.Sprintf("нет {%s}: задайте в inventory (modules.%s.%s) или в хранилище (krot secrets set %s/%s/%s)", miss, name, miss, n.Name, name, miss)
 				out = append(out, c)
 				continue
 			}

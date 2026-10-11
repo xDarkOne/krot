@@ -1,7 +1,7 @@
 # Пример inventory: каскад — вход в России, выход за границей (topology: cascade).
 # Скопируйте в inventory.yaml и поправьте адреса, имена узлов и домен. Секретов здесь нет —
-# ключи и пароли пульт создаёт сам и хранит в secrets.age рядом (vpnkit secrets init --key).
-# Что можно поставить и что включено по умолчанию: vpnkit catalog cascade
+# ключи и пароли пульт создаёт сам и хранит в secrets.age рядом (krot secrets init --key).
+# Что можно поставить и что включено по умолчанию: krot catalog cascade
 version: 1
 topology: cascade
 domain: example.org
@@ -10,7 +10,7 @@ nodes:
   ru:                                    # вход: к нему подключаются устройства
     host: 203.0.113.10
     role: entry
-    ssh: {user: root, port: 22, auth: key, key: ~/.vpnkit/keys/ru_ed25519}
+    ssh: {user: root, port: 22, auth: key, key: ~/.krot/keys/ru_ed25519}
     modules:
       nginx-tls: {names: [es.example.org, ru.example.org], tunnel_name: es.example.org}
       subscriptions: {sub_name: ru.example.org}
@@ -19,9 +19,9 @@ nodes:
   eu:                                    # выход: через него зарубежный трафик уходит в интернет
     host: 198.51.100.20
     role: exit
-    ssh: {user: root, port: 22, auth: key, key: ~/.vpnkit/keys/eu_ed25519}
+    ssh: {user: root, port: 22, auth: key, key: ~/.krot/keys/eu_ed25519}
     # если выход не виден с этого компьютера — ходить к нему через вход:
-    # ssh: {user: root, port: 22, auth: key, key: ~/.vpnkit/keys/eu_ed25519,
-    #       jump: {host: 203.0.113.10, user: root, key: ~/.vpnkit/keys/ru_ed25519}}
+    # ssh: {user: root, port: 22, auth: key, key: ~/.krot/keys/eu_ed25519,
+    #       jump: {host: 203.0.113.10, user: root, key: ~/.krot/keys/ru_ed25519}}
     modules:
       nginx-tls: {names: [en.example.org]}   # витрина выхода (по желанию)

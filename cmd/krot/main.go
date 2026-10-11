@@ -1,4 +1,4 @@
-// vpnkit — пульт развёртывания и обслуживания VPN-системы.
+// krot — пульт развёртывания и обслуживания VPN-системы.
 // Устройство: docs/ARCHITECTURE.md.
 package main
 
@@ -6,6 +6,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/xDarkOne/krot/internal/env"
 	"net"
 	"os"
 	"os/signal"
@@ -14,23 +15,23 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/xDarkOne/vpnkit/internal/alerts"
-	"github.com/xDarkOne/vpnkit/internal/backup"
-	"github.com/xDarkOne/vpnkit/internal/bootstrap"
-	"github.com/xDarkOne/vpnkit/internal/clients"
-	"github.com/xDarkOne/vpnkit/internal/cloudflare"
-	"github.com/xDarkOne/vpnkit/internal/health"
-	"github.com/xDarkOne/vpnkit/internal/inventory"
-	"github.com/xDarkOne/vpnkit/internal/modexec"
-	"github.com/xDarkOne/vpnkit/internal/probe"
-	"github.com/xDarkOne/vpnkit/internal/profile"
-	"github.com/xDarkOne/vpnkit/internal/reach"
-	"github.com/xDarkOne/vpnkit/internal/remote"
-	"github.com/xDarkOne/vpnkit/internal/secrets"
-	"github.com/xDarkOne/vpnkit/internal/selfupdate"
-	"github.com/xDarkOne/vpnkit/internal/status"
-	"github.com/xDarkOne/vpnkit/internal/wizard"
-	"github.com/xDarkOne/vpnkit/modules"
+	"github.com/xDarkOne/krot/internal/alerts"
+	"github.com/xDarkOne/krot/internal/backup"
+	"github.com/xDarkOne/krot/internal/bootstrap"
+	"github.com/xDarkOne/krot/internal/clients"
+	"github.com/xDarkOne/krot/internal/cloudflare"
+	"github.com/xDarkOne/krot/internal/health"
+	"github.com/xDarkOne/krot/internal/inventory"
+	"github.com/xDarkOne/krot/internal/modexec"
+	"github.com/xDarkOne/krot/internal/probe"
+	"github.com/xDarkOne/krot/internal/profile"
+	"github.com/xDarkOne/krot/internal/reach"
+	"github.com/xDarkOne/krot/internal/remote"
+	"github.com/xDarkOne/krot/internal/secrets"
+	"github.com/xDarkOne/krot/internal/selfupdate"
+	"github.com/xDarkOne/krot/internal/status"
+	"github.com/xDarkOne/krot/internal/wizard"
+	"github.com/xDarkOne/krot/modules"
 	"golang.org/x/term"
 )
 
@@ -43,10 +44,10 @@ var updateRepo string
 // invPathGlobal — путь inventory для команд, которым нужно хранилище секретов рядом с ним.
 var invPathGlobal string
 
-const usage = `vpnkit — развёртывание и обслуживание своего VPN: каскад из двух серверов или один сервер
+const usage = `krot (Крот) — развёртывание и обслуживание своего VPN: каскад из двух серверов или один сервер
 
 Использование:
-  vpnkit [-i inventory.yaml] <команда> [аргументы]
+  krot [-i inventory.yaml] <команда> [аргументы]
 
 Первая установка (порядок: requirements → inventory → secrets init --key → bootstrap → deploy):
   requirements [роль]   системные требования: entry | exit | solo
@@ -56,7 +57,7 @@ const usage = `vpnkit — развёртывание и обслуживание
   dns <имя> <IPv4>      смотрит ли имя на сервер у публичных резолверов
   check <узел>          проверить машину: подходит ли под роль, что мешает
   secrets init [--key]  создать хранилище secrets.age: по паролю или ключом пульта
-                        (--key: ~/.vpnkit/age.key, без пароля, как SSH-ключ)
+                        (--key: ~/.krot/age.key, без пароля, как SSH-ключ)
   bootstrap <узел>      первый вход: пароль root → ключ пульта, пароли отключаются
                         (пароль — из ssh.password_env или спросит; не сохраняется)
   deploy [--yes]        всё по схеме inventory (каскад или один сервер): ставит то, чего не хватает (повтор продолжит с места сбоя)
@@ -77,7 +78,7 @@ const usage = `vpnkit — развёртывание и обслуживание
   update [--yes]        обновить модули, чья версия на узлах отстала от пульта (с откатом по шагам)
   profile diff [узлы]   версии компонентов: эталон (пины), узлы, свежие релизы у авторов
   alerts set|chats|test [узел]  оповещения в Telegram (запросы идут с узла: из РФ Telegram API часто закрыт)
-  backup pull <узел|all>  забрать свежую копию узла в ~/.vpnkit/backups/<узел>/ и проверить
+  backup pull <узел|all>  забрать свежую копию узла в ~/.krot/backups/<узел>/ и проверить
   backup verify <файл> [роль]  расшифровать ключом пульта и проверить содержимое
   backup extract <файл> <каталог>  распаковать копию (для восстановления)
   restore clients <узел> <копия>        вернуть клиентов подписки и Telegram из резервной копии
@@ -92,18 +93,18 @@ const usage = `vpnkit — развёртывание и обслуживание
 Справка:
   modules [роль]        модули, их ресурсы, порты и зависимости
   version               версия пульта
-  self-update [--check] обновить сам vpnkit до последнего релиза (--check — только проверить)
+  self-update [--check] обновить сам krot до последнего релиза (--check — только проверить)
 
 Узлы описываются в inventory.yaml. Примеры: inventory.solo.example.yaml (один сервер),
 inventory.cascade.example.yaml (каскад). Подробно — docs/USAGE.md.
-Пароль хранилища можно передать через VPNKIT_SECRETS_PASS.
+Пароль хранилища можно передать через KROT_SECRETS_PASS.
 Пароль SSH (если узел без ключа) — из переменной окружения ssh.password_env
 или спрашивается.
 `
 
 func main() {
 	selfupdate.Cleanup(selfupdate.CLI) // прежняя версия после self-update
-	fs := flag.NewFlagSet("vpnkit", flag.ExitOnError)
+	fs := flag.NewFlagSet("krot", flag.ExitOnError)
 	invPath := fs.String("i", "inventory.yaml", "путь к inventory")
 	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	_ = fs.Parse(os.Args[1:])
@@ -122,7 +123,7 @@ func main() {
 	cmd, rest := args[0], args[1:]
 	switch cmd {
 	case "version":
-		fmt.Println("vpnkit", version)
+		fmt.Println("krot", version)
 	case "self-update":
 		selfUpdateCmd(ctx, first(rest) == "--check")
 	case "requirements", "req":
@@ -199,7 +200,7 @@ func main() {
 		}
 	case "dns-create":
 		if len(rest) < 2 {
-			die("dns-create <домен> <имя=IPv4>…  (токен Cloudflare — в VPNKIT_CF_TOKEN; только создаёт недостающее)")
+			die("dns-create <домен> <имя=IPv4>…  (токен Cloudflare — в KROT_CF_TOKEN; только создаёт недостающее)")
 		}
 		want := map[string]string{}
 		for _, kv := range rest[1:] {
@@ -209,7 +210,7 @@ func main() {
 			}
 			want[k] = v
 		}
-		recs, err := cloudflare.Ensure(ctx, os.Getenv("VPNKIT_CF_TOKEN"), rest[0], want)
+		recs, err := cloudflare.Ensure(ctx, env.Get("CF_TOKEN"), rest[0], want)
 		for _, r := range recs {
 			fmt.Printf("  %-9s %s → %s %s\n", map[string]string{"created": "создана", "exists": "уже есть", "conflict": "КОНФЛИКТ"}[r.Status], r.Name, r.Want, r.Problem)
 		}
@@ -274,7 +275,7 @@ func first(a []string) string {
 }
 
 func die(f string, a ...any) {
-	fmt.Fprintf(os.Stderr, "vpnkit: "+f+"\n", a...)
+	fmt.Fprintf(os.Stderr, "krot: "+f+"\n", a...)
 	os.Exit(1)
 }
 
@@ -541,15 +542,15 @@ func secretsCmd(invPath string, args []string) {
 	case "pubkey":
 		id, err := secrets.LoadKey()
 		if err != nil || id == nil {
-			die("ключа пульта нет — vpnkit secrets init --key")
+			die("ключа пульта нет — krot secrets init --key")
 		}
 		fmt.Println(id.Recipient().String())
 	case "set":
 		if len(args) < 2 {
-			die("укажите ключ: vpnkit secrets set узел/модуль/имя")
+			die("укажите ключ: krot secrets set узел/модуль/имя")
 		}
 		if !secrets.Exists(path) {
-			die("хранилища нет — сначала vpnkit secrets init")
+			die("хранилища нет — сначала krot secrets init")
 		}
 		s := openSecrets(invPath)
 		v, err := readSecretValue(args[1])
@@ -584,13 +585,13 @@ func secretsCmd(invPath string, args []string) {
 	}
 }
 
-// readSecretValue читает значение из VPNKIT_SECRET_VALUE или с терминала без эха.
+// readSecretValue читает значение из KROT_SECRET_VALUE или с терминала без эха.
 func readSecretValue(key string) (string, error) {
-	if v := os.Getenv("VPNKIT_SECRET_VALUE"); v != "" {
+	if v := env.Get("SECRET_VALUE"); v != "" {
 		return v, nil
 	}
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return "", fmt.Errorf("нет терминала — передайте значение в VPNKIT_SECRET_VALUE")
+		return "", fmt.Errorf("нет терминала — передайте значение в KROT_SECRET_VALUE")
 	}
 	fmt.Fprintf(os.Stderr, "Значение %s: ", key)
 	b, err := term.ReadPassword(int(os.Stdin.Fd()))
@@ -929,7 +930,7 @@ func saveClientFiles(n *inventory.Node, p clients.Profile) {
 	printCard(clients.AWGCard(n.Name, p))
 }
 
-// printCard сохраняет файлы карточки в ~/.vpnkit/clients/<узел>/ и говорит, где они.
+// printCard сохраняет файлы карточки в ~/.krot/clients/<узел>/ и говорит, где они.
 func printCard(c clients.Card) {
 	if err := c.Save(); err != nil {
 		die("%v", err)
@@ -972,10 +973,10 @@ func alertsCmd(ctx context.Context, invPath string, args []string) {
 	token, _ := sec.Get(alerts.TokenKey)
 	switch args[0] {
 	case "set":
-		t := os.Getenv("VPNKIT_TG_TOKEN")
+		t := env.Get("TG_TOKEN")
 		if t == "" {
 			if !term.IsTerminal(int(os.Stdin.Fd())) {
-				die("нужен токен бота: задайте VPNKIT_TG_TOKEN")
+				die("нужен токен бота: задайте KROT_TG_TOKEN")
 			}
 			fmt.Fprint(os.Stderr, "Токен бота от @BotFather: ")
 			b, _ := term.ReadPassword(int(os.Stdin.Fd()))
@@ -987,7 +988,7 @@ func alertsCmd(ctx context.Context, invPath string, args []string) {
 			die("%v", err)
 		}
 		fmt.Printf("  ✓ бот %s (проверено с %s)\n", name, n.Name)
-		chats := os.Getenv("VPNKIT_TG_CHATS")
+		chats := env.Get("TG_CHATS")
 		if chats == "" {
 			list, _ := alerts.RecentChats(ctx, n, t)
 			for _, c := range list {
@@ -1000,7 +1001,7 @@ func alertsCmd(ctx context.Context, invPath string, args []string) {
 		if err != nil {
 			die("%v", err)
 		}
-		if err := alerts.Send(ctx, n, t, ids, "vpnkit: оповещения подключены ✓"); err != nil {
+		if err := alerts.Send(ctx, n, t, ids, "Крот: оповещения подключены ✓"); err != nil {
 			die("тестовое сообщение не ушло: %v", err)
 		}
 		must := func(err error) {
@@ -1012,10 +1013,10 @@ func alertsCmd(ctx context.Context, invPath string, args []string) {
 		must(sec.Set(alerts.ChatsKey, strings.Join(ids, " ")))
 		must(sec.Save())
 		fmt.Println("  ✓ тестовое сообщение отправлено, токен сохранён в хранилище")
-		fmt.Println("    чтобы узлы начали слать оповещения: vpnkit install <узел> monitoring (на каждом)")
+		fmt.Println("    чтобы узлы начали слать оповещения: krot install <узел> monitoring (на каждом)")
 	case "chats":
 		if token == "" {
-			die("токена нет: vpnkit alerts set")
+			die("токена нет: krot alerts set")
 		}
 		list, err := alerts.RecentChats(ctx, n, token)
 		if err != nil {
@@ -1030,9 +1031,9 @@ func alertsCmd(ctx context.Context, invPath string, args []string) {
 	case "test":
 		chats, _ := sec.Get(alerts.ChatsKey)
 		if token == "" || chats == "" {
-			die("оповещения не настроены: vpnkit alerts set")
+			die("оповещения не настроены: krot alerts set")
 		}
-		if err := alerts.Send(ctx, n, token, strings.Fields(chats), "vpnkit: проверка оповещений с "+n.Name); err != nil {
+		if err := alerts.Send(ctx, n, token, strings.Fields(chats), "Крот: проверка оповещений с "+n.Name); err != nil {
 			die("%v", err)
 		}
 		fmt.Println("  ✓ отправлено")
@@ -1070,10 +1071,10 @@ func precheckCmd(ctx context.Context, invPath string, args []string) {
 	} else if !v.OK {
 		die("сервер отсюда недоступен; если это выход — проверьте через вход: --via <вход>")
 	}
-	pw := os.Getenv("VPNKIT_ROOT_PASS")
+	pw := env.Get("ROOT_PASS")
 	if pw == "" {
 		if !term.IsTerminal(int(os.Stdin.Fd())) {
-			die("нужен пароль root: задайте VPNKIT_ROOT_PASS")
+			die("нужен пароль root: задайте KROT_ROOT_PASS")
 		}
 		fmt.Fprint(os.Stderr, "Пароль root (не сохраняется): ")
 		b, _ := term.ReadPassword(int(os.Stdin.Fd()))
@@ -1270,10 +1271,10 @@ func selfUpdateCmd(ctx context.Context, check bool) {
 	case c.Latest == "":
 		die("проверить обновления не удалось: %s", c.Reason)
 	case !c.Newer:
-		fmt.Printf("vpnkit %s — последняя версия\n", version)
+		fmt.Printf("krot %s — последняя версия\n", version)
 		return
 	case check:
-		fmt.Printf("доступна vpnkit %s (у вас %s): %s\n", c.Latest, version, c.URL)
+		fmt.Printf("доступна krot %s (у вас %s): %s\n", c.Latest, version, c.URL)
 		return
 	case !c.CanApply:
 		die("доступна %s, но обновиться на месте нельзя: %s\nСкачайте вручную: %s", c.Latest, c.Reason, c.URL)
@@ -1281,5 +1282,5 @@ func selfUpdateCmd(ctx context.Context, check bool) {
 	if _, err := selfupdate.Apply(ctx, updateRepo, selfupdate.CLI, func(s string) { fmt.Println("  •", s) }); err != nil {
 		die("%v", err)
 	}
-	fmt.Printf("  ✓ vpnkit обновлён: %s → %s\n", version, c.Latest)
+	fmt.Printf("  ✓ krot обновлён: %s → %s\n", version, c.Latest)
 }

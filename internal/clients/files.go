@@ -8,11 +8,11 @@ import (
 
 	"github.com/skip2/go-qrcode"
 
-	"github.com/xDarkOne/vpnkit/internal/remote"
+	"github.com/xDarkOne/krot/internal/remote"
 )
 
 // Card — то, что получает человек: текст файла, содержимое QR и подсказка, чем открыть.
-// Одна карточка и для пульта (файлы в ~/.vpnkit/clients/<узел>/), и для приложения (экран).
+// Одна карточка и для пульта (файлы в ~/.krot/clients/<узел>/), и для приложения (экран).
 type Card struct {
 	Kind  string `json:"kind"` // awg | sub | tg
 	Node  string `json:"node"`
@@ -75,7 +75,7 @@ func (c Card) QRPNG(size int) ([]byte, error) {
 	return qrcode.Encode(c.QR, lvl, size)
 }
 
-// Save кладёт файлы карточки в ~/.vpnkit/clients/<узел>/ (права 600: там ключи клиента).
+// Save кладёт файлы карточки в ~/.krot/clients/<узел>/ (права 600: там ключи клиента).
 func (c *Card) Save() error {
 	dir := Dir(c.Node)
 	if err := os.MkdirAll(dir, 0o700); err != nil {

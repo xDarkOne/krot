@@ -1,4 +1,4 @@
-# Манифест модуля vpnkit. Схема: _schema.yaml. Описание: docs/20-server-modules/client-awg.md
+# Манифест модуля krot. Схема: _schema.yaml. Описание: docs/20-server-modules/client-awg.md
 name: client-awg
 doc: docs/20-server-modules/client-awg.md
 roles:
@@ -39,7 +39,7 @@ params:
   default: 212
 secrets:
 - '<узел>/client-awg/<iface>/*: ключ сервера, HPK, порт, обфускация'
-- ключи клиентов (vpnkit clients add)
+- ключи клиентов (krot clients add)
 ports:
 - proto: udp
   port: '{port}'
@@ -68,7 +68,7 @@ units:
 - dnsmasq.service
 files:
 - /etc/amnezia/amneziawg/<iface>.conf
-- /etc/nftables.d/30-vpnkit-client-<iface>.nft
+- /etc/nftables.d/30-krot-client-<iface>.nft
 - /etc/dnsmasq.d/30-vpnkit-<iface>.conf
 - /etc/dnsmasq.d/10-vpnkit-dns.conf (один сервер)
 versions: {}

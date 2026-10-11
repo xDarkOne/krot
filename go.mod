@@ -1,4 +1,4 @@
-module github.com/xDarkOne/vpnkit
+module github.com/xDarkOne/krot
 
 go 1.26.4
 

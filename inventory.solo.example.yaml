@@ -1,7 +1,7 @@
 # Пример inventory: один зарубежный сервер (topology: solo).
 # Скопируйте в inventory.yaml и поправьте адрес, имя узла и домен. Секретов здесь нет —
-# ключи и пароли пульт создаёт сам и хранит в secrets.age рядом (vpnkit secrets init --key).
-# Что можно поставить и что включено по умолчанию: vpnkit catalog solo
+# ключи и пароли пульт создаёт сам и хранит в secrets.age рядом (krot secrets init --key).
+# Что можно поставить и что включено по умолчанию: krot catalog solo
 version: 1
 topology: solo
 domain: example.org
@@ -10,7 +10,7 @@ nodes:
   vpn:                                   # имя узла — для себя: латиница, цифры, дефис
     host: 203.0.113.10                   # публичный IPv4 сервера
     role: solo
-    ssh: {user: root, port: 22, auth: key, key: ~/.vpnkit/keys/vpn_ed25519}   # ключ создаст vpnkit bootstrap
+    ssh: {user: root, port: 22, auth: key, key: ~/.krot/keys/vpn_ed25519}   # ключ создаст krot bootstrap
     modules:
       # имена в DNS (A-записи на host, без проксирования Cloudflare). Без них ставится
       # только AmneziaWG: подписке, VLESS, Hysteria2 и прокси Telegram нужен домен

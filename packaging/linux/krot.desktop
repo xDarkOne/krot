@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=vpnkit
+Name=Крот
 Comment=Свой VPN на своих серверах
-Exec=vpnkit-app
-Icon=vpnkit
+Exec=krot-app
+Icon=krot
 Terminal=false
 Categories=Network;Utility;

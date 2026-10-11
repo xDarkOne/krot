@@ -6,9 +6,9 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/xDarkOne/vpnkit/internal/inventory"
-	"github.com/xDarkOne/vpnkit/internal/probe"
-	"github.com/xDarkOne/vpnkit/internal/remote"
+	"github.com/xDarkOne/krot/internal/inventory"
+	"github.com/xDarkOne/krot/internal/probe"
+	"github.com/xDarkOne/krot/internal/remote"
 )
 
 // Finding — находка проверки сервера для экрана.

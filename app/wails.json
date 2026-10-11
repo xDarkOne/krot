@@ -1,20 +1,20 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "vpnkit",
-  "outputfilename": "vpnkit-app",
+  "name": "krot",
+  "outputfilename": "krot-app",
   "frontend:install": "npm install",
   "frontend:build": "npm run build",
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
   "author": {
-    "name": "vpnkit",
+    "name": "Крот",
     "email": ""
   },
   "info": {
-    "companyName": "vpnkit",
-    "productName": "vpnkit",
+    "companyName": "Крот",
+    "productName": "Крот",
     "productVersion": "0.1.0",
-    "copyright": "© авторы vpnkit, GPL-3.0-or-later",
+    "copyright": "© авторы Крота, GPL-3.0-or-later",
     "comments": "Свой VPN на своих серверах"
   }
 }

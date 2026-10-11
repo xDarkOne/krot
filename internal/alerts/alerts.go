@@ -11,8 +11,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/xDarkOne/vpnkit/internal/inventory"
-	"github.com/xDarkOne/vpnkit/internal/remote"
+	"github.com/xDarkOne/krot/internal/inventory"
+	"github.com/xDarkOne/krot/internal/remote"
 )
 
 // Ключи в хранилище секретов (их же читает модуль monitoring).

@@ -1,6 +1,10 @@
-# vpnkit
+<p align="center"><img src="packaging/icon/krot-256.png" width="160" alt="Крот"></p>
 
-Свой VPN на своих серверах — без консоли. Приложение с окном (Windows, macOS, Linux) и командная строка.
+<h1 align="center">Крот</h1>
+
+<p align="center"><b>Роет туннели под любыми стенами.</b><br>Свой VPN на своих серверах — без консоли.</p>
+
+Крот — приложение с окном (Windows, macOS, Linux) и командная строка.
 
 - **Две схемы.**
   - Каскад: вход в России → выход за границей. Устройства видят только российский адрес, поэтому схема переживает белые списки мобильных операторов и блокировку зарубежных адресов.
@@ -24,9 +28,9 @@
 
 | Система | Приложение | Командная строка |
 |---|---|---|
-| Windows 10/11 | `vpnkit-app-…-windows-amd64.exe` (ARM — `-arm64`) | `vpnkit-cli-…-windows-amd64.exe` |
-| macOS (Intel и Apple Silicon) | `vpnkit-app-…-macos-universal.zip` | `vpnkit-cli-…-macos-arm64` / `-amd64` |
-| Linux | `vpnkit-app-…-linux-amd64.tar.gz` (ARM — `-arm64`) | `vpnkit-cli-…-linux-amd64` |
+| Windows 10/11 | `krot-app-…-windows-amd64.exe` (ARM — `-arm64`) | `krot-cli-…-windows-amd64.exe` |
+| macOS (Intel и Apple Silicon) | `krot-app-…-macos-universal.zip` | `krot-cli-…-macos-arm64` / `-amd64` |
+| Linux | `krot-app-…-linux-amd64.tar.gz` (ARM — `-arm64`) | `krot-cli-…-linux-amd64` |
 
 Сборки не подписаны: Windows и macOS предупредят при первом запуске. Как запустить — в описании релиза.
 
@@ -44,7 +48,7 @@
 1. Арендуйте VPS с KVM и Ubuntu 24.04/26.04 или Debian 12/13: один за границей или два (Россия + заграница). Лучше купить и домен.
 2. Откройте приложение → **«Новая установка…»** → схема → серверы (IP и пароль root) → домен → состав → установка.
 3. На экране сервера добавьте клиентов: у каждого будет QR и ссылка.
-4. Сохраните копию ключа пульта (`~/.vpnkit/age.key`): без него не расшифровать ни настройки, ни резервные копии.
+4. Сохраните копию ключа пульта (`~/.krot/age.key`): без него не расшифровать ни настройки, ни резервные копии.
 
 ## Документация
 
@@ -63,7 +67,7 @@
 Нужны Go (версия — в `go.mod`), Node.js 22 и Wails CLI v2.16. Подробно — [app/README.md](app/README.md).
 
 ```
-go build -o vpnkit ./cmd/vpnkit                              # командная строка
+go build -o krot ./cmd/krot                              # командная строка
 go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
 cd app && wails build                                        # окно; на Linux: wails build -tags webkit2_41
 ```
@@ -77,4 +81,4 @@ cd app && wails build                                        # окно; на Li
 
 ## Лицензия
 
-[GPL-3.0-or-later](LICENSE) © авторы vpnkit. Пользоваться, менять и распространять можно свободно; изменённую версию, которую вы распространяете, нужно выпускать тоже с открытым кодом под GPL.
+[GPL-3.0-or-later](LICENSE) © авторы Крота. Пользоваться, менять и распространять можно свободно; изменённую версию, которую вы распространяете, нужно выпускать тоже с открытым кодом под GPL.

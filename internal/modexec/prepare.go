@@ -8,10 +8,10 @@ import (
 	"net"
 	"strings"
 
-	"github.com/xDarkOne/vpnkit/agent"
-	"github.com/xDarkOne/vpnkit/internal/awgkeys"
-	"github.com/xDarkOne/vpnkit/internal/inventory"
-	"github.com/xDarkOne/vpnkit/internal/secrets"
+	"github.com/xDarkOne/krot/agent"
+	"github.com/xDarkOne/krot/internal/awgkeys"
+	"github.com/xDarkOne/krot/internal/inventory"
+	"github.com/xDarkOne/krot/internal/secrets"
 )
 
 // telegramPrefixes — сети Telegram: entry ходит к ним через каскад (бот, telemt).
@@ -280,7 +280,7 @@ func prepareBackup(n *inventory.Node, p map[string]string) (map[string]string, e
 		return nil, err
 	}
 	if id == nil {
-		return nil, fmt.Errorf("нет ключа пульта %s — создайте его: vpnkit secrets init --key", secrets.KeyPath())
+		return nil, fmt.Errorf("нет ключа пульта %s — создайте его: krot secrets init --key", secrets.KeyPath())
 	}
 	p["NODE"] = n.Name
 	p["RECIPIENT"] = id.Recipient().String()
@@ -554,7 +554,7 @@ const (
 	MTProxyLEngine = "3.5.13"
 )
 
-// MTProxyBotTokenKey — токен бота MTProxyL в хранилище (свой бот: оповещения vpnkit при
+// MTProxyBotTokenKey — токен бота MTProxyL в хранилище (свой бот: оповещения krot при
 // настройке читают getUpdates и отобрали бы сообщения у общего).
 func MTProxyBotTokenKey(node string) string { return node + "/mtproxy/tgbot_token" }
 

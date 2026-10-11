@@ -1,4 +1,4 @@
-// Package selfupdate — обновление самого vpnkit (окна и CLI) из релизов GitHub.
+// Package selfupdate — обновление самого krot (окна и CLI) из релизов GitHub.
 //
 // Откуда брать релизы, задаёт сборка (-ldflags "-X main.updateRepo=владелец/репо"): у сборок
 // без этого и у версии «dev» обновлений нет. Файл релиза сверяется по SHA256SUMS того же релиза,
@@ -72,15 +72,15 @@ func osName() string {
 func assetName(k Kind, v string) string {
 	switch {
 	case k == CLI && runtime.GOOS == "windows":
-		return fmt.Sprintf("vpnkit-cli-%s-windows-%s.exe", v, runtime.GOARCH)
+		return fmt.Sprintf("krot-cli-%s-windows-%s.exe", v, runtime.GOARCH)
 	case k == CLI:
-		return fmt.Sprintf("vpnkit-cli-%s-%s-%s", v, osName(), runtime.GOARCH)
+		return fmt.Sprintf("krot-cli-%s-%s-%s", v, osName(), runtime.GOARCH)
 	case runtime.GOOS == "windows":
-		return fmt.Sprintf("vpnkit-app-%s-windows-%s.exe", v, runtime.GOARCH)
+		return fmt.Sprintf("krot-app-%s-windows-%s.exe", v, runtime.GOARCH)
 	case runtime.GOOS == "darwin":
-		return fmt.Sprintf("vpnkit-app-%s-macos-universal.zip", v)
+		return fmt.Sprintf("krot-app-%s-macos-universal.zip", v)
 	default:
-		return fmt.Sprintf("vpnkit-app-%s-linux-%s.tar.gz", v, runtime.GOARCH)
+		return fmt.Sprintf("krot-app-%s-linux-%s.tar.gz", v, runtime.GOARCH)
 	}
 }
 
@@ -190,7 +190,7 @@ func target(k Kind) (string, error) {
 	}
 	t := exe
 	if k == App && runtime.GOOS == "darwin" {
-		t = filepath.Dir(filepath.Dir(filepath.Dir(exe))) // …/vpnkit.app/Contents/MacOS/vpnkit
+		t = filepath.Dir(filepath.Dir(filepath.Dir(exe))) // …/krot.app/Contents/MacOS/vpnkit
 		if !strings.HasSuffix(t, ".app") {
 			return "", errors.New("приложение запущено не из .app — обновите вручную")
 		}
@@ -245,7 +245,7 @@ func Apply(ctx context.Context, repo string, k Kind, log func(string)) (string, 
 	case k == App && runtime.GOOS == "darwin":
 		return replaceApp(data, t)
 	case k == App && runtime.GOOS == "linux":
-		bin, err := fromTarGz(data, "vpnkit-app")
+		bin, err := fromTarGz(data, "krot-app")
 		if err != nil {
 			return "", err
 		}

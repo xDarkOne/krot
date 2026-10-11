@@ -1,4 +1,4 @@
-# Манифест модуля vpnkit. Схема: _schema.yaml. Описание: docs/20-server-modules/gemini.md
+# Манифест модуля krot. Схема: _schema.yaml. Описание: docs/20-server-modules/gemini.md
 name: gemini
 doc: docs/20-server-modules/gemini.md
 roles:

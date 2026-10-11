@@ -1,6 +1,6 @@
 // Package wizard — установка целиком: какие модули на каком узле (выбор пользователя плюс
 // зависимости), в каком порядке, и прогон по шагам через modexec. Общий для мастера в окне
-// и для `vpnkit deploy`. Что предлагается и куда ставится — блок catalog в манифестах.
+// и для `krot deploy`. Что предлагается и куда ставится — блок catalog в манифестах.
 package wizard
 
 import (
@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/xDarkOne/vpnkit/internal/inventory"
-	"github.com/xDarkOne/vpnkit/internal/modexec"
-	"github.com/xDarkOne/vpnkit/internal/secrets"
-	"github.com/xDarkOne/vpnkit/modules"
+	"github.com/xDarkOne/krot/internal/inventory"
+	"github.com/xDarkOne/krot/internal/modexec"
+	"github.com/xDarkOne/krot/internal/secrets"
+	"github.com/xDarkOne/krot/modules"
 )
 
 // Step — один шаг плана.

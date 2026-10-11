@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/xDarkOne/krot/internal/env"
 	"io"
 	"os"
 	"path/filepath"
@@ -19,10 +20,10 @@ import (
 )
 
 // PassEnv — переменная окружения с паролем хранилища (для скриптов).
-const PassEnv = "VPNKIT_SECRETS_PASS"
+const PassEnv = "SECRETS_PASS" // KROT_SECRETS_PASS (или прежняя VPNKIT_SECRETS_PASS)
 
 // Store — расшифрованное хранилище в памяти. Шифруется либо ключом X25519 из
-// ~/.vpnkit/age.key (режим ключа: как SSH-ключ, без пароля), либо паролем (scrypt).
+// ~/.krot/age.key (режим ключа: как SSH-ключ, без пароля), либо паролем (scrypt).
 type Store struct {
 	path   string
 	pass   string
@@ -30,14 +31,8 @@ type Store struct {
 	values map[string]string
 }
 
-// KeyPath — ключ-файл age пульта (~/.vpnkit/age.key или $VPNKIT_HOME/age.key).
-func KeyPath() string {
-	if d := os.Getenv("VPNKIT_HOME"); d != "" {
-		return filepath.Join(d, "age.key")
-	}
-	h, _ := os.UserHomeDir()
-	return filepath.Join(h, ".vpnkit", "age.key")
-}
+// KeyPath — ключ-файл age пульта (~/.krot/age.key или $KROT_HOME/age.key).
+func KeyPath() string { return filepath.Join(env.Home(), "age.key") }
 
 // LoadKey читает ключ пульта; nil, если ключ-файла нет.
 func LoadKey() (*age.X25519Identity, error) {
@@ -72,7 +67,7 @@ func CreateKey() (*age.X25519Identity, error) {
 	if err := os.MkdirAll(filepath.Dir(KeyPath()), 0o700); err != nil {
 		return nil, err
 	}
-	body := "# ключ пульта vpnkit: расшифровка secrets.age и резервных копий узлов\n" +
+	body := "# ключ пульта krot: расшифровка secrets.age и резервных копий узлов\n" +
 		"# публичная часть: " + id.Recipient().String() + "\n" + id.String() + "\n"
 	return id, os.WriteFile(KeyPath(), []byte(body), 0o600)
 }
@@ -92,14 +87,14 @@ func Exists(path string) bool {
 var PassPrompt func(prompt string) (string, error)
 
 func askPass(prompt string) (string, error) {
-	if p := os.Getenv(PassEnv); p != "" {
+	if p := env.Get(PassEnv); p != "" {
 		return p, nil
 	}
 	if PassPrompt != nil {
 		return PassPrompt(prompt)
 	}
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return "", fmt.Errorf("нет терминала для пароля хранилища — задайте %s", PassEnv)
+		return "", fmt.Errorf("нет терминала для пароля хранилища — задайте KROT_%s", PassEnv)
 	}
 	fmt.Fprint(os.Stderr, prompt)
 	b, err := term.ReadPassword(int(os.Stdin.Fd()))
@@ -125,7 +120,7 @@ func Create(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if os.Getenv(PassEnv) == "" {
+	if env.Get(PassEnv) == "" {
 		p2, err := askPass("Ещё раз: ")
 		if err != nil {
 			return nil, err

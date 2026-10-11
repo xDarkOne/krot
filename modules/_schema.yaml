@@ -1,4 +1,4 @@
-description: Схема манифеста модуля vpnkit (см. docs/ARCHITECTURE.md, раздел «Модуль»)
+description: Схема манифеста модуля krot (см. docs/ARCHITECTURE.md, раздел «Модуль»)
 required:
 - doc
 - roles

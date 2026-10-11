@@ -15,7 +15,7 @@ export async function initAppUpdate() {
     setInterval(check, EVERY);
 }
 
-// проверка без мыши: VPNKIT_APP_OPEN=update — сразу обновиться, если есть куда
+// проверка без мыши: KROT_APP_OPEN=update — сразу обновиться, если есть куда
 export async function updateNow() {
     try { await ApplyUpdate(); } catch (e) { toast('Обновление не удалось: ' + errText(e), true); }
 }
@@ -40,7 +40,7 @@ async function check() {
         }
     });
     bar.replaceChildren(...[
-        el('span', {}, `Доступна новая версия vpnkit ${c.latest} (у вас ${c.current}).`),
+        el('span', {}, `Доступна новая версия Крота: ${c.latest} (у вас ${c.current}).`),
         c.canApply ? null : el('span', {class: 'small'}, c.reason),
         go, step].filter(Boolean));
     bar.hidden = false;

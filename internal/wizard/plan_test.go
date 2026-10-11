@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xDarkOne/vpnkit/agent"
-	"github.com/xDarkOne/vpnkit/internal/inventory"
-	"github.com/xDarkOne/vpnkit/internal/modexec"
-	"github.com/xDarkOne/vpnkit/modules"
+	"github.com/xDarkOne/krot/agent"
+	"github.com/xDarkOne/krot/internal/inventory"
+	"github.com/xDarkOne/krot/internal/modexec"
+	"github.com/xDarkOne/krot/modules"
 )
 
 func node(name, role string, names ...string) *inventory.Node {

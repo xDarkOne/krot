@@ -1,5 +1,5 @@
-// vpnkit — приложение пульта (Windows, macOS, Linux): состояние узлов и клиенты.
-// Логика — пакеты internal/, те же, что у CLI cmd/vpnkit.
+// krot — приложение пульта (Windows, macOS, Linux): состояние узлов и клиенты.
+// Логика — пакеты internal/, те же, что у CLI cmd/krot.
 package main
 
 import (
@@ -9,7 +9,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 
-	"github.com/xDarkOne/vpnkit/internal/selfupdate"
+	"github.com/xDarkOne/krot/internal/selfupdate"
 )
 
 //go:embed all:frontend/dist
@@ -19,7 +19,7 @@ func main() {
 	selfupdate.Cleanup(selfupdate.App) // прежняя версия после обновления
 	app := NewApp()
 	err := wails.Run(&options.App{
-		Title:     "vpnkit",
+		Title:     "Крот",
 		Width:     1180,
 		Height:    780,
 		MinWidth:  900,

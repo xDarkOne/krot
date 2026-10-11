@@ -19,3 +19,5 @@
 - **Linux:** нужны GTK3 и WebKitGTK 4.1 (подробно — `README.txt` в архиве), затем `./install.sh`.
 
 Как пользоваться — https://github.com/REPO/blob/main/docs/USAGE.md.
+
+Лицензия — GPL-3.0-or-later.

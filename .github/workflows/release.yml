@@ -83,6 +83,7 @@ jobs:
           cp app/build/bin/vpnkit-app dist/$d/
           cp app/build/appicon.png dist/$d/vpnkit.png
           cp packaging/linux/vpnkit.desktop packaging/linux/install.sh packaging/linux/README.txt dist/$d/
+          cp LICENSE dist/$d/
           tar -C dist -czf dist/$d.tar.gz $d && rm -rf dist/$d
       - uses: actions/upload-artifact@v4
         with: {name: "app-linux-${{ matrix.arch }}", path: dist/*.tar.gz}

@@ -314,3 +314,4 @@ table.dns th { white-space: nowrap; }
 .cmod:last-child { border-bottom: 0; }
 .cmod input { margin-top: 3px; }
 .cmod > div > div { margin: 2px 0; }
+.brand .ver { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 4px; }

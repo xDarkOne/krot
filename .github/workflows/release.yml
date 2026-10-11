@@ -48,7 +48,7 @@ jobs:
           for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
             os=${t%/*}; arch=${t#*/}; ext=""; [ "$os" = windows ] && ext=.exe
             name=$os; [ "$os" = darwin ] && name=macos
-            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$V" \
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$V -X main.updateRepo=$GITHUB_REPOSITORY" \
               -o "dist/vpnkit-cli-$V-$name-$arch$ext" ./cmd/vpnkit
           done
       - uses: actions/upload-artifact@v4
@@ -74,7 +74,7 @@ jobs:
         run: jq --arg v "${{ needs.version.outputs.v }}" '.info.productVersion=$v' app/wails.json > w && mv w app/wails.json
       - name: сборка
         working-directory: app
-        run: wails build -tags webkit2_41 -platform linux/${{ matrix.arch }} -trimpath -o vpnkit-app
+        run: wails build -tags webkit2_41 -platform linux/${{ matrix.arch }} -trimpath -ldflags "-X main.version=${{ needs.version.outputs.v }} -X main.updateRepo=${{ github.repository }}" -o vpnkit-app
       - name: архив
         env: {V: "${{ needs.version.outputs.v }}"}
         run: |
@@ -104,7 +104,7 @@ jobs:
       - run: jq --arg v "${{ needs.version.outputs.v }}" '.info.productVersion=$v' app/wails.json > w && mv w app/wails.json
       - name: сборка
         working-directory: app
-        run: wails build -platform windows/${{ matrix.arch }} -trimpath -o vpnkit-app.exe
+        run: wails build -platform windows/${{ matrix.arch }} -trimpath -ldflags "-X main.version=${{ needs.version.outputs.v }} -X main.updateRepo=${{ github.repository }}" -o vpnkit-app.exe
       - env: {V: "${{ needs.version.outputs.v }}"}
         run: mkdir -p dist && cp app/build/bin/vpnkit-app.exe "dist/vpnkit-app-$V-windows-${{ matrix.arch }}.exe"
       - uses: actions/upload-artifact@v4
@@ -123,7 +123,7 @@ jobs:
       - run: jq --arg v "${{ needs.version.outputs.v }}" '.info.productVersion=$v' app/wails.json > w && mv w app/wails.json
       - name: сборка (Intel + Apple Silicon в одном .app)
         working-directory: app
-        run: wails build -platform darwin/universal -trimpath
+        run: wails build -platform darwin/universal -trimpath -ldflags "-X main.version=${{ needs.version.outputs.v }} -X main.updateRepo=${{ github.repository }}"
       - name: архив
         env: {V: "${{ needs.version.outputs.v }}"}
         run: |

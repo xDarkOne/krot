@@ -42,6 +42,7 @@ internal/
   alerts           бот Telegram для оповещений
   profile          сверка версий: пины пульта, узлы, свежие релизы
   awgkeys          ключи и обфускация AmneziaWG 3.1
+  selfupdate       обновление самого vpnkit из релизов GitHub (сверка по SHA256SUMS, подмена файла)
 ```
 
 ## Модуль

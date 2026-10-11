@@ -1,4 +1,4 @@
-// vpnkit — приложение пульта (Windows, macOS): состояние узлов и клиенты.
+// vpnkit — приложение пульта (Windows, macOS, Linux): состояние узлов и клиенты.
 // Логика — пакеты internal/, те же, что у CLI cmd/vpnkit.
 package main
 
@@ -8,12 +8,15 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+
+	"github.com/xDarkOne/vpnkit/internal/selfupdate"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
 func main() {
+	selfupdate.Cleanup(selfupdate.App) // прежняя версия после обновления
 	app := NewApp()
 	err := wails.Run(&options.App{
 		Title:     "vpnkit",

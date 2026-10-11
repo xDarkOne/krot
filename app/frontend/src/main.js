@@ -8,6 +8,7 @@ import {
 import {EventsOn} from '../wailsjs/runtime/runtime';
 import {$, el, toast, errText} from './util.js';
 import {startWizard} from './wizard.js';
+import {initAppUpdate, updateNow} from './appupdate.js';
 import {openAlerts} from './alerts.js';
 import {checkUpdates} from './updates.js';
 import {openVersions} from './versions.js';
@@ -252,6 +253,8 @@ async function loadState(s) {
         opened = true;
         if (state.open === 'versions') {
             openVersions();
+        } else if (state.open === 'update') {
+            updateNow();
         } else if (state.open === 'alerts') {
             openAlerts();
         } else if (state.open.startsWith('wizard')) {
@@ -465,3 +468,4 @@ $('new').addEventListener('click', () => {
 
 window.vpnkitUnlock = Unlock;   // для будущего окна пароля хранилища
 loadState();
+initAppUpdate();

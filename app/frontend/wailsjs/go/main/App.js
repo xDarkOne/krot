@@ -26,12 +26,20 @@ export function Answer(arg1, arg2, arg3) {
   return window['go']['main']['App']['Answer'](arg1, arg2, arg3);
 }
 
+export function ApplyUpdate() {
+  return window['go']['main']['App']['ApplyUpdate']();
+}
+
 export function ApplyUpdates() {
   return window['go']['main']['App']['ApplyUpdates']();
 }
 
 export function Backups(arg1) {
   return window['go']['main']['App']['Backups'](arg1);
+}
+
+export function CheckUpdate() {
+  return window['go']['main']['App']['CheckUpdate']();
 }
 
 export function Clients(arg1) {
@@ -88,6 +96,10 @@ export function Unlock(arg1) {
 
 export function Updates() {
   return window['go']['main']['App']['Updates']();
+}
+
+export function Version() {
+  return window['go']['main']['App']['Version']();
 }
 
 export function Versions() {

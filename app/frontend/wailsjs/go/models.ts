@@ -622,6 +622,37 @@ export namespace reach {
 
 }
 
+export namespace selfupdate {
+	
+	export class Check {
+	    current: string;
+	    latest: string;
+	    newer: boolean;
+	    canApply: boolean;
+	    reason: string;
+	    url: string;
+	    notes: string;
+	    checkedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Check(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.current = source["current"];
+	        this.latest = source["latest"];
+	        this.newer = source["newer"];
+	        this.canApply = source["canApply"];
+	        this.reason = source["reason"];
+	        this.url = source["url"];
+	        this.notes = source["notes"];
+	        this.checkedAt = source["checkedAt"];
+	    }
+	}
+
+}
+
 export namespace status {
 	
 	export class Module {

@@ -27,6 +27,7 @@ import (
 	"github.com/xDarkOne/vpnkit/internal/reach"
 	"github.com/xDarkOne/vpnkit/internal/remote"
 	"github.com/xDarkOne/vpnkit/internal/secrets"
+	"github.com/xDarkOne/vpnkit/internal/selfupdate"
 	"github.com/xDarkOne/vpnkit/internal/status"
 	"github.com/xDarkOne/vpnkit/internal/wizard"
 	"github.com/xDarkOne/vpnkit/modules"
@@ -34,6 +35,10 @@ import (
 )
 
 var version = "0.1.0-dev"
+
+// updateRepo — откуда брать обновления (владелец/репо на GitHub); задаёт сборка релиза:
+// -ldflags "-X main.updateRepo=…". Пусто — обновлений нет.
+var updateRepo string
 
 // invPathGlobal — путь inventory для команд, которым нужно хранилище секретов рядом с ним.
 var invPathGlobal string
@@ -87,6 +92,7 @@ const usage = `vpnkit — развёртывание и обслуживание
 Справка:
   modules [роль]        модули, их ресурсы, порты и зависимости
   version               версия пульта
+  self-update [--check] обновить сам vpnkit до последнего релиза (--check — только проверить)
 
 Узлы описываются в inventory.yaml. Примеры: inventory.solo.example.yaml (один сервер),
 inventory.cascade.example.yaml (каскад). Подробно — docs/USAGE.md.
@@ -96,6 +102,7 @@ inventory.cascade.example.yaml (каскад). Подробно — docs/USAGE.m
 `
 
 func main() {
+	selfupdate.Cleanup(selfupdate.CLI) // прежняя версия после self-update
 	fs := flag.NewFlagSet("vpnkit", flag.ExitOnError)
 	invPath := fs.String("i", "inventory.yaml", "путь к inventory")
 	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
@@ -116,6 +123,8 @@ func main() {
 	switch cmd {
 	case "version":
 		fmt.Println("vpnkit", version)
+	case "self-update":
+		selfUpdateCmd(ctx, first(rest) == "--check")
 	case "requirements", "req":
 		requirements(all, first(rest))
 	case "modules":
@@ -1252,4 +1261,25 @@ func printStatus(st status.Status) {
 			fmt.Println("    • " + f)
 		}
 	}
+}
+
+// selfUpdateCmd — новая версия CLI из релизов: скачать, сверить по SHA256SUMS, подменить себя.
+func selfUpdateCmd(ctx context.Context, check bool) {
+	c := selfupdate.Status(ctx, updateRepo, version, selfupdate.CLI)
+	switch {
+	case c.Latest == "":
+		die("проверить обновления не удалось: %s", c.Reason)
+	case !c.Newer:
+		fmt.Printf("vpnkit %s — последняя версия\n", version)
+		return
+	case check:
+		fmt.Printf("доступна vpnkit %s (у вас %s): %s\n", c.Latest, version, c.URL)
+		return
+	case !c.CanApply:
+		die("доступна %s, но обновиться на месте нельзя: %s\nСкачайте вручную: %s", c.Latest, c.Reason, c.URL)
+	}
+	if _, err := selfupdate.Apply(ctx, updateRepo, selfupdate.CLI, func(s string) { fmt.Println("  •", s) }); err != nil {
+		die("%v", err)
+	}
+	fmt.Printf("  ✓ vpnkit обновлён: %s → %s\n", version, c.Latest)
 }

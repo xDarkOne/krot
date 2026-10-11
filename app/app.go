@@ -183,7 +183,7 @@ func (a *App) vault() (*secrets.Store, error) {
 func (a *App) GetState() State {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	st := State{Inventory: a.invPath, Vault: "none", Open: os.Getenv("VPNKIT_APP_OPEN")}
+	st := State{Inventory: a.invPath, Vault: "none", Open: os.Getenv("VPNKIT_APP_OPEN"), Nodes: []NodeView{}}
 	if a.inv == nil {
 		return st
 	}

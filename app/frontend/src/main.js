@@ -238,6 +238,7 @@ EventsOn('ask-password', (q) => {
 
 async function loadState(s) {
     state = s || await GetState();
+    state.nodes = state.nodes || [];   // без файла узлов Go отдаёт null
     $('inv').textContent = state.inventory || 'файл узлов не открыт';
     const w = $('welcome');
     if (w) w.hidden = !!state.inventory;

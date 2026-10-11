@@ -1,0 +1,95 @@
+# Манифест модуля vpnkit. Схема: _schema.yaml. Описание: docs/20-server-modules/nginx-tls.md
+name: nginx-tls
+doc: docs/20-server-modules/nginx-tls.md
+roles:
+- entry
+- exit
+- solo
+requires:
+- base-host
+conflicts: []
+resources:
+  ram_mb: 20
+  disk_mb: 20
+params:
+- name: names
+  type: list
+  note: имена узла (A-записи на него, без проксирования); первое — основное
+- name: tunnel_name
+  type: string
+  default: первое имя
+  note: имя для туннелей (XHTTP, hysteria2)
+- name: email
+  type: email
+  default: ''
+  note: почта для Let's Encrypt (необязательно)
+- name: xhttp_port
+  type: port
+  default: 4443
+secrets:
+- '<узел>/nginx-tls/site: вариант текста витрины'
+ports:
+- proto: tcp
+  port: 80
+  expose: true
+  purpose: ACME + 301
+- proto: tcp
+  port: 443
+  expose: true
+  purpose: stream SNI (entry) / витрина (exit)
+- proto: tcp
+  port: '{xhttp_public_port}'
+  expose: true
+  purpose: XHTTP за TLS
+- proto: tcp
+  port: 8444
+  expose: false
+  purpose: витрины (loopback)
+nft:
+  fw_input:
+  - tcp dport {80,443,xhttp_public_port} accept
+ip_rules: []
+units:
+- nginx.service
+- certbot.timer
+files:
+- /etc/nginx/sites-available/vpnkit-<имя>
+- /etc/nginx/modules-enabled/99-vpnkit-stream.conf
+- /etc/nginx/stream.d/vpnkit-443.conf (пишет vpnkit-gen.py)
+- /etc/letsencrypt/renewal-hooks/deploy/vpnkit-reload.sh
+- /etc/nftables.d/40-vpnkit-nginx.nft
+- /etc/vpnkit/nginx.env
+- /var/www/vpnkit-<имя>/
+versions:
+  packages: nginx, libnginx-mod-stream, certbot (дистрибутив)
+health:
+- cmd: nginx -t 2>&1
+  expect: successful
+- cmd: 'certbot certificates 2>/dev/null | grep -o ''VALID: [0-9]* days'' | sort -t'' '' -k2 -n | head -1'
+  expect: VALID
+pitfalls:
+- P-20
+- P-21
+- P-23
+steps:
+  preflight: agent/nginx-tls/preflight.sh
+  install: agent/nginx-tls/install.sh
+  verify: agent/nginx-tls/verify.sh
+  update: agent/nginx-tls/update.sh
+  rollback: agent/nginx-tls/rollback.sh
+  uninstall: agent/nginx-tls/uninstall.sh
+catalog:
+  group: base
+  order: 60
+  default: true
+  domain: true
+  place:
+    cascade:
+    - exit
+    - entry
+    solo:
+    - solo
+  title: Сайт и сертификаты
+  what: Let's Encrypt, сайт-витрина, разбор порта 443 по имени
+  why: Сервер выглядит обычным сайтом; на нём держатся VLESS, Hysteria2, подписка и маска Telegram-прокси. Нужен домен.
+  cost: порты 80 и 443

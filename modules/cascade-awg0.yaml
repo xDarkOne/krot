@@ -1,0 +1,76 @@
+# Манифест модуля vpnkit. Схема: _schema.yaml. Описание: docs/20-server-modules/cascade-awg0.md
+name: cascade-awg0
+doc: docs/20-server-modules/cascade-awg0.md
+roles:
+- entry
+- exit
+topology:
+- cascade
+requires:
+- base-host
+- amneziawg
+conflicts: []
+resources:
+  ram_mb: 5
+  disk_mb: 1
+params:
+- name: tunnel_net
+  type: cidr
+  default: 10.100.0.0/30
+  note: задаётся у выхода
+- name: port
+  type: port
+  default: случайный 20000–60000
+  note: задаётся у выхода
+secrets:
+- '<выход>/cascade-awg0/*: ключи обоих концов, PSK, HeaderProtectionKey, обфускация, порт'
+ports:
+- proto: udp
+  port: '{exit_port}'
+  expose: true
+  purpose: awg0 на exit
+nft:
+  exit:
+  - forward awg0 -> !awg0 accept
+  - 'nat: ip saddr {tunnel_net} oifname != awg0 masquerade'
+ip_rules:
+- prio: 200
+  rule: from <entry_tunnel_ip> table 200
+- prio: 207
+  rule: fwmark 0x3 table 200
+units:
+- awg-quick@awg0.service
+files:
+- /etc/amnezia/amneziawg/awg0.conf
+- /etc/nftables.d/20-vpnkit-cascade.nft
+versions: {}
+health:
+- node: entry
+  cmd: ping -c3 -W2 10.100.0.1
+  expect: 0% packet loss
+- node: entry
+  cmd: curl -s -m10 --interface awg0 https://api.ipify.org
+  expect: '{exit_ip}'
+- node: exit
+  cmd: awg show awg0 latest-handshakes | awk -v n=$(date +%s) '$2>0{print n-$2}' | sort -n | head -1
+  expect: <180
+pitfalls:
+- P-30
+steps:
+  preflight: agent/cascade-awg0/preflight.sh
+  install: agent/cascade-awg0/install.sh
+  verify: agent/cascade-awg0/verify.sh
+  update: agent/cascade-awg0/update.sh
+  rollback: agent/cascade-awg0/rollback.sh
+  uninstall: agent/cascade-awg0/uninstall.sh
+catalog:
+  group: cascade
+  order: 30
+  required: true
+  place:
+    cascade:
+    - exit
+    - entry
+  title: Туннель вход → выход
+  what: Зарубежный трафик уходит на выход, клиенты видят только российский адрес
+  why: 'Это и есть каскад: российский сервер принимает клиентов, зарубежный выпускает их в интернет.'

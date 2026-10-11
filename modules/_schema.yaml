@@ -1,0 +1,58 @@
+description: Схема манифеста модуля vpnkit (см. docs/ARCHITECTURE.md, раздел «Модуль»)
+required:
+- doc
+- roles
+- requires
+- conflicts
+- resources
+- params
+- secrets
+- ports
+- nft
+- ip_rules
+- units
+- files
+- versions
+- health
+- pitfalls
+- steps
+fields:
+  name: идентификатор модуля
+  doc: путь к документу модуля
+  roles: entry | exit | solo
+  topology: ограничение топологии (cascade | solo)
+  requires: модули, которые должны стоять раньше
+  requires_if: 'условные зависимости {условие: [модули]}'
+  conflicts: несовместимые модули/компоненты
+  resources: ram_mb, disk_mb | flash_mb, cpu, note
+  params: список {name, type, default, ask, check}; default может быть генератором (random:A-B, generate)
+  secrets: что генерирует пульт и хранит в secrets.age
+  ports: '{proto, port, expose: наружу ли, purpose}'
+  nft: свои таблицы и вставки в общие цепочки; foreign — чужие таблицы, которые модуль только читает/дополняет
+  ip_rules: '{prio, rule} — реестр приоритетов 200–219 и fwmark'
+  units: юниты systemd / init.d
+  files: что модуль кладёт на узел
+  versions: пин, источник, проверка
+  constraints: условия платформы
+  health: '{node?, cmd, expect}'
+  pitfalls: ссылки P-NN на docs/60-pitfalls.md
+  steps: preflight/install/verify/update/rollback/uninstall → agent/<модуль>/<шаг>.sh
+  deadman_sec: через сколько секунд узел сам откатит модуль, если пульт не подтвердил успех
+  catalog: 'как модуль предлагается при установке (нет блока — установщик его не предлагает):
+    group (base | cascade | access | extra), order (порядок установки; нужные модули — раньше),
+    required (всегда, выключить нельзя), auto (ставится, только когда нужен другим), default (включён
+    по умолчанию), domain (нужны имена nginx-tls), place {cascade: [exit, entry], solo: [solo]} — куда
+    ставится в каждой схеме, title, what (одна строка), why (зачем и когда включать), cost (память,
+    порты, время). Выбор пользователя — modules.<имя>.enabled в inventory. Проверяет go test ./internal/wizard/'
+registries:
+  ip_rule_priorities:
+    '200': from entry tunnel ip → 200
+    205-209: клиентские сети fwmark 0x1 → main
+    '207': fwmark 0x3 → 200
+    210-214: клиентские сети → 200
+  fwmarks:
+    '0x1': split (РФ напрямую)
+    '0x3': cascade (xray, STUN, DNS наружу)
+    '0x40000000': zapret2 desync
+  tables:
+    '200': каскад → awg0

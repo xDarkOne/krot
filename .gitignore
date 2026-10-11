@@ -1,0 +1,12 @@
+*.local.*
+inventory.yaml
+/secrets*
+*.age
+/bin/
+/dist/
+.DS_Store
+inventory.test.yaml
+*.exe
+app/build/bin/
+app/frontend/node_modules/
+app/frontend/dist/

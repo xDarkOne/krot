@@ -1,0 +1,19 @@
+# Проверки на каждый push и pull request: vet, тесты (включая проверку скриптов агентов и каталога).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version-file: go.mod}
+      # app — окно Wails: ему нужны GTK и собранный интерфейс, его проверяет сборка релиза
+      - run: go vet $(go list -e ./... | grep -v /app)
+      - run: go test $(go list -e ./... | grep -v /app)
+      - run: bash tools/redact-check.sh

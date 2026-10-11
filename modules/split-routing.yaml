@@ -1,0 +1,68 @@
+# Манифест модуля vpnkit. Схема: _schema.yaml. Описание: docs/20-server-modules/split-routing.md
+name: split-routing
+doc: docs/20-server-modules/split-routing.md
+roles:
+- entry
+topology:
+- cascade
+requires:
+- base-host
+- cascade-awg0
+conflicts: []
+resources:
+  ram_mb: 30
+  disk_mb: 20
+params:
+- name: ru_resolver
+  type: ip
+  default: 77.88.8.8
+  note: резолвер для российских зон
+secrets: []
+ports:
+- proto: udp
+  port: 53
+  expose: false
+  purpose: dnsmasq на адресах туннелей
+nft:
+  tables:
+  - inet split
+  - inet dnsout
+  - inet stun
+ip_rules: []
+units:
+- dnsmasq.service
+- vpnkit-ru-nets.timer
+files:
+- /etc/dnsmasq.d/10-vpnkit-split.conf
+- /etc/nftables.d/25-vpnkit-split.nft
+- /usr/local/sbin/vpnkit-ru-nets.sh
+- /var/lib/vpnkit/ru-nets.txt
+versions:
+  dnsmasq: '>=2.87 (nftset)'
+health:
+- cmd: nft list set inet vpnkit_split ru_nets | grep -o / | wc -l
+  expect: '>5000'
+- cmd: dig +short +time=3 @127.0.0.1 ya.ru A | head -1
+  expect: nonempty
+pitfalls:
+- P-01
+- P-15
+- P-24
+- P-25
+steps:
+  preflight: agent/split-routing/preflight.sh
+  install: agent/split-routing/install.sh
+  verify: agent/split-routing/verify.sh
+  update: agent/split-routing/update.sh
+  rollback: agent/split-routing/rollback.sh
+  uninstall: agent/split-routing/uninstall.sh
+catalog:
+  group: cascade
+  order: 40
+  auto: true
+  place:
+    cascade:
+    - entry
+  title: Российское — напрямую
+  what: 'Списки сетей и доменов РФ и свой DNS: Госуслуги и банки идут с российского адреса'
+  why: 'Ставится сам на входе каскада: без него российские сайты, закрытые для заграницы, не откроются.'

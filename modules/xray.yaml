@@ -1,0 +1,91 @@
+# Манифест модуля vpnkit. Схема: _schema.yaml. Описание: docs/20-server-modules/xray.md
+name: xray
+doc: docs/20-server-modules/xray.md
+roles:
+- entry
+- solo
+- exit
+requires:
+- base-host
+- nginx-tls
+requires_if:
+  entry:
+  - split-routing
+  - cascade-awg0
+conflicts: []
+resources:
+  ram_mb: 60
+  disk_mb: 60
+params:
+- name: label
+  type: string
+  default: имя узла
+  note: подпись входов в приложениях клиентов
+secrets:
+- '<узел>/xray/*: пути и порты XHTTP и PQ, пара vlessenc'
+- UUID и токены клиентов — /etc/vpnkit/users.json на узле
+ports:
+- proto: tcp
+  port: '{xhttp_port}'
+  expose: false
+  purpose: XHTTP за nginx
+- proto: tcp
+  port: '{pq_port}'
+  expose: true
+  purpose: VLESS Encryption
+- proto: tcp
+  port: 10801
+  expose: false
+  purpose: SOCKS для sing-box (loopback)
+nft:
+  fw_input:
+  - tcp dport {pq_port} accept
+ip_rules: []
+units:
+- xray.service
+- vpnkit-gen.timer
+files:
+- /usr/local/bin/xray
+- /usr/local/etc/xray/config.json (пишет vpnkit-gen.py)
+- /etc/vpnkit/users.json
+- /etc/vpnkit/xray.env
+- /etc/nginx/vpnkit.d/<имя>-xhttp-xray.conf
+- /etc/nftables.d/45-vpnkit-xray.nft
+- /usr/local/sbin/vpnkit-gen.py
+versions:
+  pin: в internal/modexec/prepare.go (sha256 архива)
+  source: github.com/XTLS/Xray-core/releases
+  reason: P-10
+health:
+- cmd: /usr/local/bin/xray run -test -config /usr/local/etc/xray/config.json 2>&1 | tail -1
+  expect: Configuration OK
+- cmd: curl -s -m10 -x socks5h://127.0.0.1:10801 https://api.ipify.org
+  expect: nonempty
+pitfalls:
+- P-10
+- P-16
+- P-17
+- P-18
+- P-19
+- P-27
+steps:
+  preflight: agent/xray/preflight.sh
+  install: agent/xray/install.sh
+  verify: agent/xray/verify.sh
+  update: agent/xray/update.sh
+  rollback: agent/xray/rollback.sh
+  uninstall: agent/xray/uninstall.sh
+catalog:
+  group: access
+  order: 70
+  default: true
+  domain: true
+  place:
+    cascade:
+    - entry
+    solo:
+    - solo
+  title: VLESS (XHTTP, постквантовый)
+  what: Входы подписки поверх обычного HTTPS
+  why: Трафик неотличим от посещения сайта — переживает блокировки, где режут VPN-протоколы. Раздаётся подпиской.
+  cost: ≈60 МБ памяти

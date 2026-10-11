@@ -1,0 +1,85 @@
+# Манифест модуля vpnkit. Схема: _schema.yaml. Описание: docs/20-server-modules/base-host.md
+name: base-host
+doc: docs/20-server-modules/base-host.md
+roles:
+- entry
+- exit
+- solo
+requires: []
+conflicts: []
+resources:
+  ram_mb: 512
+  disk_mb: 5000
+  note: RAM вместе со swap
+params:
+- name: ssh_port
+  type: port
+  default: 22
+- name: timezone
+  type: string
+  default: Europe/Moscow
+- name: swap_mb
+  type: int
+  default: 2048
+  note: добавляется, если памяти меньше 1 ГБ
+secrets: []
+ports:
+- proto: tcp
+  port: '{ssh_port}'
+  expose: true
+  purpose: SSH
+nft:
+  tables:
+  - inet vpnkit_fw
+  file: /etc/nftables.d/10-vpnkit-fw.nft
+ip_rules: []
+units:
+- nftables.service
+- fail2ban.service
+- chrony.service
+- unattended-upgrades
+files:
+- /etc/nftables.conf
+- /etc/nftables.d/10-vpnkit-fw.nft
+- /etc/systemd/system/nftables.service.d/10-vpnkit-no-flush.conf
+- /etc/sysctl.d/99-vpnkit.conf
+- /etc/fail2ban/jail.d/vpnkit.conf
+- /etc/apt/apt.conf.d/20auto-upgrades
+- /etc/systemd/journald.conf.d/50-vpnkit.conf
+- /swapfile или /swapfile.vpnkit (если нужен swap)
+versions:
+  packages: дистрибутив
+health:
+- cmd: sshd -T | grep -E '^passwordauthentication '
+  expect: passwordauthentication no
+- cmd: sysctl -n net.ipv4.ip_forward
+  expect: '1'
+- cmd: systemctl is-active fail2ban nftables
+  expect: active
+pitfalls:
+- P-01
+- P-05
+- P-46
+- P-47
+- P-48
+steps:
+  preflight: agent/base-host/preflight.sh
+  install: agent/base-host/install.sh
+  verify: agent/base-host/verify.sh
+  update: agent/base-host/update.sh
+  rollback: agent/base-host/rollback.sh
+  uninstall: agent/base-host/uninstall.sh
+deadman_sec: 180
+catalog:
+  group: base
+  order: 10
+  required: true
+  place:
+    cascade:
+    - exit
+    - entry
+    solo:
+    - solo
+  title: Основа сервера
+  what: Фаервол, SSH только по ключу, fail2ban, обновления безопасности, swap
+  why: 'Без неё остальное не ставится: закрывает сервер от сканеров и подбора пароля, включает автообновления безопасности.'

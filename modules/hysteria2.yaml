@@ -1,0 +1,64 @@
+# Манифест модуля vpnkit. Схема: _schema.yaml. Описание: docs/20-server-modules/hysteria2.md
+name: hysteria2
+doc: docs/20-server-modules/hysteria2.md
+roles:
+- entry
+- solo
+requires:
+- xray
+- nginx-tls
+conflicts: []
+resources:
+  ram_mb: 50
+  disk_mb: 45
+params:
+- name: hy2_port
+  type: port
+  default: 443
+secrets:
+- пароли hysteria2 клиентов — /etc/vpnkit/users.json на узле
+ports:
+- proto: udp
+  port: '{port}'
+  expose: true
+  purpose: hysteria2
+nft:
+  fw_input:
+  - udp dport {port} accept
+ip_rules: []
+units:
+- sing-box.service
+files:
+- /etc/sing-box/config.json (пишет vpnkit-gen.py)
+- /etc/systemd/system/sing-box.service.d/10-vpnkit-single-config.conf
+- /etc/vpnkit/hy2.env
+- /etc/nftables.d/46-vpnkit-hy2.nft
+versions:
+  pin: в internal/modexec/prepare.go (sha256 .deb)
+  source: github.com/SagerNet/sing-box/releases
+health:
+- cmd: sing-box check -c /etc/sing-box/config.json && echo ok
+  expect: ok
+pitfalls:
+- P-20
+steps:
+  preflight: agent/hysteria2/preflight.sh
+  install: agent/hysteria2/install.sh
+  verify: agent/hysteria2/verify.sh
+  update: agent/hysteria2/update.sh
+  rollback: agent/hysteria2/rollback.sh
+  uninstall: agent/hysteria2/uninstall.sh
+catalog:
+  group: access
+  order: 80
+  default: true
+  domain: true
+  place:
+    cascade:
+    - entry
+    solo:
+    - solo
+  title: Hysteria2
+  what: Быстрый вход подписки по UDP/QUIC
+  why: Самый быстрый на плохих и мобильных сетях. Раздаётся подпиской.
+  cost: ≈40 МБ памяти, UDP 443

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>vpnkit</title>
+    <link rel="stylesheet" href="./src/style.css"/>
+</head>
+<body>
+<header class="top">
+    <div class="brand">vpnkit</div>
+    <div class="inv" id="inv">файл узлов не открыт</div>
+    <button class="ghost" id="versions">Версии</button>
+    <button class="ghost" id="alerts">Оповещения</button>
+    <button class="ghost" id="new">Новая установка…</button>
+    <button class="ghost" id="pick">Открыть файл узлов…</button>
+</header>
+<div class="upd" id="upd" hidden></div>
+<div class="layout">
+    <nav class="side">
+        <div class="side-head">
+            <span>Узлы</span>
+            <button class="ghost small" id="refresh-all" title="Проверить все узлы">Проверить все</button>
+        </div>
+        <ul id="nodes"></ul>
+    </nav>
+    <main id="main">
+        <div class="empty" id="welcome">
+            <h2>Начнём</h2>
+            <p>Настроить VPN с нуля — на двух серверах (каскад) или на одном — «Новая установка». Уже есть файл узлов (inventory.yaml) — «Открыть файл узлов».</p>
+        </div>
+    </main>
+</div>
+<div class="log" id="log"></div>
+
+<div class="modal" id="modal" hidden>
+    <div class="sheet">
+        <button class="close" id="modal-close" aria-label="Закрыть">×</button>
+        <div id="modal-body"></div>
+    </div>
+</div>
+<script src="./src/main.js" type="module"></script>
+</body>
+</html>

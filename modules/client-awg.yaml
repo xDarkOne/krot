@@ -1,0 +1,101 @@
+# Манифест модуля vpnkit. Схема: _schema.yaml. Описание: docs/20-server-modules/client-awg.md
+name: client-awg
+doc: docs/20-server-modules/client-awg.md
+roles:
+- entry
+- solo
+requires:
+- base-host
+- amneziawg
+requires_if:
+  cascade:
+  - split-routing
+  - cascade-awg0
+conflicts: []
+resources:
+  ram_mb: 5
+  disk_mb: 1
+params:
+- name: iface
+  type: string
+  default: awg2
+- name: net
+  type: cidr
+  default: 10.9.2.0/24
+- name: port
+  type: port
+  default: случайный 20000–60000
+- name: mtu
+  type: int
+  default: 1260
+- name: mss
+  type: int
+  default: 1220
+- name: rule_main
+  type: int
+  default: 208
+- name: rule_cascade
+  type: int
+  default: 212
+secrets:
+- '<узел>/client-awg/<iface>/*: ключ сервера, HPK, порт, обфускация'
+- ключи клиентов (vpnkit clients add)
+ports:
+- proto: udp
+  port: '{port}'
+  expose: true
+  purpose: вход AWG (по входу)
+nft:
+  fw_input:
+  - udp dport {port} accept
+  - iifname {if} accept
+  fw_forward:
+  - MSS clamp (mtu-40) до established
+  - iifname {if} accept
+  nat:
+  - ip saddr {net} oifname {awg0,wan} masquerade
+  split:
+  - iifname {if} ip daddr @ru_nets|@ru_domains mark 0x1
+  torrent:
+  - drop BitTorrent, >400 соединений на клиента
+ip_rules:
+- prio: 205-209
+  rule: from {net} fwmark 0x1 lookup main
+- prio: 210-214
+  rule: from {net} lookup 200
+units:
+- awg-quick@<iface>.service
+- dnsmasq.service
+files:
+- /etc/amnezia/amneziawg/<iface>.conf
+- /etc/nftables.d/30-vpnkit-client-<iface>.nft
+- /etc/dnsmasq.d/30-vpnkit-<iface>.conf
+- /etc/dnsmasq.d/10-vpnkit-dns.conf (один сервер)
+versions: {}
+health:
+- cmd: for i in $(awg show interfaces); do echo "$i $(awg show $i dump | awk 'NR>1 && $5>0' | wc -l)"; done
+  expect: nonempty
+pitfalls:
+- P-06
+- P-08
+- P-30
+steps:
+  preflight: agent/client-awg/preflight.sh
+  install: agent/client-awg/install.sh
+  verify: agent/client-awg/verify.sh
+  update: agent/client-awg/update.sh
+  rollback: agent/client-awg/rollback.sh
+  uninstall: agent/client-awg/uninstall.sh
+catalog:
+  group: access
+  order: 50
+  default: true
+  place:
+    cascade:
+    - entry
+    solo:
+    - solo
+  title: AmneziaWG — вход для приложений
+  what: Приложение AmneziaVPN, профиль по QR-коду
+  why: 'Самый простой способ: одно приложение на телефон и компьютер, обфускация против блокировок. Домен не нужен.'
+  cost: один UDP-порт; клиентам с новым IP сервера нужен новый профиль

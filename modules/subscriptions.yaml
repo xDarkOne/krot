@@ -1,0 +1,63 @@
+# Манифест модуля vpnkit. Схема: _schema.yaml. Описание: docs/20-server-modules/subscriptions.md
+name: subscriptions
+doc: docs/20-server-modules/subscriptions.md
+roles:
+- entry
+- solo
+requires:
+- xray
+- nginx-tls
+conflicts: []
+resources:
+  ram_mb: 0
+  disk_mb: 5
+params:
+- name: sub_name
+  type: string
+  default: имя туннелей
+  note: имя, с которого раздаются подписки
+- name: routing
+  type: bool
+  default: 1
+  note: правила «российское — напрямую» для Happ и INCY
+- name: routing_name
+  type: string
+  default: VPN
+  note: имя профиля правил в приложении
+secrets:
+- токены подписок клиентов — /etc/vpnkit/users.json на узле
+ports: []
+nft: {}
+ip_rules: []
+units: []
+files:
+- /etc/nginx/vpnkit.d/<имя>-site-sub.conf
+- /etc/vpnkit/sub.env
+- /var/www/vpnkit-sub/u/
+versions: {}
+health:
+- cmd: test -d /var/www/vpnkit-sub/u && echo ok
+  expect: ok
+pitfalls:
+- P-19
+- P-50
+steps:
+  preflight: agent/subscriptions/preflight.sh
+  install: agent/subscriptions/install.sh
+  verify: agent/subscriptions/verify.sh
+  update: agent/subscriptions/update.sh
+  rollback: agent/subscriptions/rollback.sh
+  uninstall: agent/subscriptions/uninstall.sh
+catalog:
+  group: access
+  order: 90
+  default: true
+  domain: true
+  place:
+    cascade:
+    - entry
+    solo:
+    - solo
+  title: Подписка
+  what: Одна ссылка на все входы для Happ, v2rayNG, Hiddify
+  why: 'Клиент получает одну ссылку: в ней все входы и правила «российское — напрямую»; новые входы приходят сами.'

@@ -1,0 +1,62 @@
+# Манифест модуля vpnkit. Схема: _schema.yaml. Описание: docs/20-server-modules/monitoring.md
+name: monitoring
+doc: docs/20-server-modules/monitoring.md
+roles:
+- entry
+- exit
+- solo
+requires:
+- base-host
+conflicts: []
+resources:
+  ram_mb: 10
+  disk_mb: 1
+params:
+- name: peer_tcp
+  type: list
+  default: ''
+  note: TCP-порты соседа, проверяемые снаружи
+- name: services_extra
+  type: list
+  default: ''
+  note: дополнительные службы
+secrets:
+- _global/alert/tg_token и _global/alert/tg_chats — бот и получатели оповещений (vpnkit alerts set)
+ports: []
+nft: {}
+ip_rules: []
+units:
+- vpnkit-watch.timer
+- vpnkit-watch.service
+files:
+- /usr/local/sbin/vpnkit-watch.sh
+- /etc/vpnkit/watch.conf
+- /etc/vpnkit/alert.env
+- /var/lib/vpnkit/watch.state
+versions: {}
+health:
+- cmd: s=$(mktemp); WATCH_STATE=$s bash /usr/local/sbin/vpnkit-watch.sh | tail -1; rm -f $s
+  expect: 'не прошло: 0'
+- cmd: systemctl is-enabled vpnkit-watch.timer
+  expect: enabled
+pitfalls: []
+steps:
+  preflight: agent/monitoring/preflight.sh
+  install: agent/monitoring/install.sh
+  verify: agent/monitoring/verify.sh
+  update: agent/monitoring/update.sh
+  rollback: agent/monitoring/rollback.sh
+  uninstall: agent/monitoring/uninstall.sh
+catalog:
+  group: base
+  order: 120
+  default: true
+  place:
+    cascade:
+    - exit
+    - entry
+    solo:
+    - solo
+  title: Мониторинг
+  what: Проверки каждые 5 минут, оповещения в Telegram
+  why: Узнаете о поломке раньше, чем вам напишут, что «VPN не работает».

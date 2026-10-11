@@ -1,0 +1,71 @@
+# Манифест модуля vpnkit. Схема: _schema.yaml. Описание: docs/20-server-modules/amneziawg.md
+name: amneziawg
+doc: docs/20-server-modules/amneziawg.md
+roles:
+- entry
+- exit
+- solo
+requires:
+- base-host
+conflicts: []
+resources:
+  ram_mb: 0
+  disk_mb: 600
+  note: сборка DKMS
+params:
+- name: module_tag
+  type: string
+  default: пин пульта
+  note: другой тег модуля ядра — для проверки новой версии
+- name: tools_tag
+  type: string
+  default: пин пульта
+  note: другой тег утилит
+secrets: []
+ports: []
+nft: {}
+ip_rules: []
+units: []
+files:
+- /usr/src/amneziawg-*
+- /usr/bin/awg
+- /usr/bin/awg-quick
+- /usr/lib/systemd/system/awg-quick@.service
+versions:
+  pin: v3.1.20260906 (утилиты v3.1.20260812)
+  source: github.com/amnezia-vpn/amneziawg-linux-kernel-module, amneziawg-tools
+  verify: modinfo amneziawg | awk '/^version/{print $2}'
+constraints:
+- виртуализация KVM или выделенный сервер
+- есть linux-headers-$(uname -r)
+- Secure Boot без обязательной подписи
+health:
+- cmd: modinfo amneziawg | awk '/^version/{print $2}'
+  expect: 3.1.
+- cmd: dkms status amneziawg
+  expect: installed
+pitfalls:
+- P-12
+- P-13
+steps:
+  preflight: agent/amneziawg/preflight.sh
+  install: agent/amneziawg/install.sh
+  verify: agent/amneziawg/verify.sh
+  update: agent/amneziawg/update.sh
+  rollback: agent/amneziawg/rollback.sh
+  uninstall: agent/amneziawg/uninstall.sh
+deadman_sec: 1800
+catalog:
+  group: base
+  order: 20
+  auto: true
+  place:
+    cascade:
+    - exit
+    - entry
+    solo:
+    - solo
+  title: AmneziaWG (модуль ядра)
+  what: Модуль ядра AWG 3.1, собирается под ядро сервера (DKMS)
+  why: Ставится сам, если выбран каскад или вход AmneziaWG.
+  cost: сборка 5–15 минут

@@ -1,0 +1,102 @@
+# Манифест модуля vpnkit. Схема: _schema.yaml. Описание: docs/20-server-modules/mtproxy.md
+name: mtproxy
+doc: docs/20-server-modules/mtproxy.md
+roles:
+- entry
+- solo
+requires:
+- nginx-tls
+requires_if:
+  cascade:
+  - cascade-awg0
+conflicts: []
+resources:
+  ram_mb: 60
+  disk_mb: 40
+params:
+- name: mask_name
+  type: string
+  default: первое имя nginx-tls
+- name: backend
+  type: string
+  default: mtproxyl
+  note: mtproxyl (MTProxyL, по умолчанию) или telemt (свой telemt без бота, панели и WEB Proxy)
+- name: web_name
+  type: string
+  default: имя nginx-tls с первой меткой web или *-web
+  note: только для mtproxyl; отдельное от mask_name, сертификат выпускает nginx-tls
+- name: tgbot_admin
+  type: string
+  default: ''
+  note: числовой id админа бота MTProxyL; токен — в хранилище, ключ <узел>/mtproxy/tgbot_token
+secrets:
+- секреты пользователей — /etc/vpnkit/users.json → mtproto и MTProxyL на узле
+- <узел>/mtproxy/tgbot_token — бот MTProxyL (необязательно)
+ports:
+- proto: tcp
+  port: 15443
+  expose: false
+  purpose: 'telemt: MTProto за nginx stream (PROXY protocol)'
+- proto: tcp
+  port: 9091
+  expose: false
+  purpose: API telemt
+- proto: tcp
+  port: 9090
+  expose: false
+  purpose: метрики telemt
+nft:
+  tables:
+  - inet vpnkit_mtproxy (MSS 1200 на :443, STUN → каскад)
+  foreign: []
+ip_rules: []
+units:
+- telemt.service (свой вид)
+- mtproxyl-telemt.service, mtproxyl-zapret2.service, mtproxyl-tgbot.service, mtproxyl-dc-watch.timer, mtproxyl-availability.timer
+  (MTProxyL)
+files:
+- /usr/local/bin/telemt
+- /etc/telemt/telemt.toml
+- /etc/vpnkit/mtproxy.env
+- /etc/systemd/system/telemt.service
+- /etc/nftables.d/47-vpnkit-mtproxy.nft
+- /opt/mtproxyl (MTProxyL)
+- /etc/nginx/sites-available/vpnkit-mtproxyl-web (TLS-сервер WEB Proxy на 127.0.0.1:15444)
+versions:
+  mtproxyl: v1.6.37 (тег; дальше обновляется сам MTProxyL из main)
+  telemt: 3.5.13 у MTProxyL (бинарник, sha256 сверяет MTProxyL), 3.5.7 у своего (sha256 в internal/modexec/prepare.go)
+  source: github.com/Liafanx/MTProxyL, github.com/telemt/telemt
+health:
+- cmd: ss -Hltn 'sport = :15443' | grep -c 127.0.0.1
+  expect: '>=1'
+- cmd: if [ -f /opt/mtproxyl/settings.conf ]; then grep ^WEB_FRONTEND= /opt/mtproxyl/settings.conf; else echo 'WEB_FRONTEND=haproxy
+    (MTProxyL нет)'; fi
+  expect: haproxy
+pitfalls:
+- P-07
+- P-21
+- P-22
+- P-23
+- P-53
+steps:
+  preflight: agent/mtproxy/preflight.sh
+  install: agent/mtproxy/install.sh
+  verify: agent/mtproxy/verify.sh
+  update: agent/mtproxy/update.sh
+  rollback: agent/mtproxy/rollback.sh
+  uninstall: agent/mtproxy/uninstall.sh
+deadman_sec: 900
+catalog:
+  group: access
+  order: 100
+  default: true
+  domain: true
+  place:
+    cascade:
+    - entry
+    solo:
+    - solo
+  title: Прокси для Telegram
+  what: 'MTProxyL: Telegram без VPN-приложения, маскировка под ваш сайт'
+  why: 'Для тех, кому нужен только Telegram: прокси включается в настройках самого Telegram. Удобно родным.'
+  cost: ≈30 МБ памяти

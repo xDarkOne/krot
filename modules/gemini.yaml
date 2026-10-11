@@ -1,0 +1,53 @@
+# Манифест модуля vpnkit. Схема: _schema.yaml. Описание: docs/20-server-modules/gemini.md
+name: gemini
+doc: docs/20-server-modules/gemini.md
+roles:
+- entry
+- solo
+requires:
+- split-routing
+- xray
+conflicts: []
+resources:
+  ram_mb: 0
+  disk_mb: 2
+params:
+- name: interval_min
+  type: int
+  default: 10
+  note: как часто проверять провайдеров Smart-DNS
+secrets: []
+ports: []
+nft: {}
+ip_rules: []
+units:
+- ai-dns-switch.timer
+files:
+- /usr/local/bin/ai-dns-switch.sh
+- /etc/dnsmasq.d/ai-smart.conf
+versions: {}
+health:
+- cmd: dig +short @127.0.0.1 gemini.google.com | head -3
+  expect: nonempty
+pitfalls:
+- P-15
+- P-16
+- P-18
+steps:
+  preflight: agent/gemini/preflight.sh
+  install: agent/gemini/install.sh
+  verify: agent/gemini/verify.sh
+  update: agent/gemini/update.sh
+  rollback: agent/gemini/rollback.sh
+  uninstall: agent/gemini/uninstall.sh
+catalog:
+  group: extra
+  order: 105
+  default: false
+  place:
+    cascade:
+    - entry
+  title: Gemini и другие ИИ Google
+  what: Запросы к Gemini — через Smart-DNS
+  why: Google часто считает зарубежные адреса хостеров российскими и не пускает в Gemini. Включайте, если Gemini через выход
+    не открывается.

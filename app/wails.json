@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "vpnkit",
+  "outputfilename": "vpnkit-app",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "vpnkit",
+    "email": ""
+  },
+  "info": {
+    "companyName": "vpnkit",
+    "productName": "vpnkit",
+    "productVersion": "0.1.0",
+    "copyright": "vpnkit",
+    "comments": "Свой VPN на своих серверах"
+  }
+}

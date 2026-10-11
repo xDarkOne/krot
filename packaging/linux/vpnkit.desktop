@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=vpnkit
+Comment=Свой VPN на своих серверах
+Exec=vpnkit-app
+Icon=vpnkit
+Terminal=false
+Categories=Network;Utility;

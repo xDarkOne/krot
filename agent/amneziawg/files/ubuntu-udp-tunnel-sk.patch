@@ -1,0 +1,28 @@
+diff --git a/src/Kbuild b/src/Kbuild
+index a154c7b..b45f5bf 100644
+--- a/src/Kbuild
++++ b/src/Kbuild
+@@ -4,6 +4,7 @@
+ 
+ ccflags-y := -D'pr_fmt(fmt)=KBUILD_MODNAME ": " fmt'
+ ccflags-y += -Wframe-larger-than=2048
++ccflags-y += $(shell grep -qs '^void setup_udp_tunnel_sock.struct net .net, struct sock .sk' $(srctree)/include/net/udp_tunnel.h && echo -DAWG_UDP_TUNNEL_SETUP_SK)
+ ccflags-$(CONFIG_AMNEZIAWG_DEBUG) += -DDEBUG -g
+ ccflags-$(if $(WIREGUARD_VERSION),y,) += -D'WIREGUARD_VERSION="$(WIREGUARD_VERSION)"'
+ ccflags-$(if $(OMIT_ENDPOINTS),y,) += -D'OMIT_ENDPOINTS="$(OMIT_ENDPOINTS)"'
+diff --git a/src/compat/compat.h b/src/compat/compat.h
+index 3b8606d..d88c2b0 100644
+--- a/src/compat/compat.h
++++ b/src/compat/compat.h
+@@ -1446,7 +1446,11 @@ static inline void __compat_chacha20_crypt(struct chacha_state *state,
+ 
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(7, 1, 5)
+ #include <net/udp_tunnel.h>
++/* Ubuntu 7.0.0-38 backported the struct sock * signature of setup_udp_tunnel_sock
++ * (but not of udp_tunnel_sock_release); Kbuild detects it from the headers. */
++#ifndef AWG_UDP_TUNNEL_SETUP_SK
+ #define setup_udp_tunnel_sock(net, sk, sock_cfg) setup_udp_tunnel_sock(net, sk->sk_socket, sock_cfg)
++#endif
+ #define udp_tunnel_sock_release(sk) udp_tunnel_sock_release(sk->sk_socket)
+ #endif
+ 

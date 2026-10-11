@@ -1,0 +1,70 @@
+# Манифест модуля vpnkit. Схема: _schema.yaml. Описание: docs/20-server-modules/backup.md
+name: backup
+doc: docs/20-server-modules/backup.md
+roles:
+- entry
+- exit
+- solo
+requires:
+- base-host
+conflicts: []
+resources:
+  ram_mb: 20
+  disk_mb: 100
+  note: хранится 7 последних копий
+params:
+- name: time
+  type: string
+  default: 04:30 (выход — 04:00)
+- name: keep
+  type: int
+  default: 7
+- name: extra_paths
+  type: list
+  default: ''
+  note: дополнительные пути в копию
+- name: sqlite
+  type: list
+  default: ''
+  note: базы SQLite — копируются через .backup
+secrets:
+- открытый ключ пульта (age) — не секрет; закрытый только на компьютере пользователя
+ports: []
+nft: {}
+ip_rules: []
+units:
+- vpnkit-backup.timer
+- vpnkit-backup.service
+files:
+- /usr/local/sbin/vpnkit-backup.sh
+- /etc/vpnkit/backup.conf
+- /etc/vpnkit/backup.recipients
+- /var/backups/vpnkit/
+versions:
+  age: пакет дистрибутива (>= 1.1)
+health:
+- cmd: f=$(ls -1t /var/backups/vpnkit/*.tar.gz.age | head -1); echo $(( ($(date +%s) - $(stat -c %Y $f)) / 3600 ))
+  expect: <30
+- cmd: systemctl is-enabled vpnkit-backup.timer
+  expect: enabled
+pitfalls: []
+steps:
+  preflight: agent/backup/preflight.sh
+  install: agent/backup/install.sh
+  verify: agent/backup/verify.sh
+  update: agent/backup/update.sh
+  rollback: agent/backup/rollback.sh
+  uninstall: agent/backup/uninstall.sh
+catalog:
+  group: base
+  order: 110
+  default: true
+  place:
+    cascade:
+    - exit
+    - entry
+    solo:
+    - solo
+  title: Резервные копии
+  what: Каждую ночь, зашифрованы ключом этого компьютера
+  why: Если сервер умрёт, ключи и клиенты вернутся из копии — никому не придётся заново раздавать профили.

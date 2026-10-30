@@ -15,7 +15,6 @@ nodes:
       nginx-tls: {names: [es.example.org, ru.example.org], tunnel_name: es.example.org}
       subscriptions: {sub_name: ru.example.org}
       mtproxy: {mask_name: ru.example.org}
-      # gemini: {enabled: true}          # если Gemini через выход не открывается
   eu:                                    # выход: через него зарубежный трафик уходит в интернет
     host: 198.51.100.20
     role: exit

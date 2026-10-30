@@ -69,9 +69,6 @@ func TestPlanCascade(t *testing.T) {
 	if on, why := reason(p, "e", "split-routing"); !on || !strings.Contains(why, "нужен для") {
 		t.Errorf("split-routing на входе: %v %q", on, why)
 	}
-	if on, _ := reason(p, "e", "gemini"); on {
-		t.Error("gemini по умолчанию выключен")
-	}
 	p, _ = Plan(inv(false), nil)
 	if n := len(todo(p)); n != 12 {
 		t.Errorf("без домена шагов %d, ждали 12: %v", n, todo(p))
@@ -117,7 +114,6 @@ func TestPlanSolo(t *testing.T) {
 func TestPlanChoices(t *testing.T) {
 	i := inv(true)
 	i.Nodes["e"].Modules["mtproxy"] = map[string]any{"enabled": false}
-	i.Nodes["e"].Modules["gemini"] = map[string]any{"enabled": true}
 	i.Nodes["e"].Modules["nginx-tls"]["enabled"] = false
 	p, _ := Plan(i, map[string][]string{"x": {"base-host", "amneziawg"}})
 	for _, s := range p {
@@ -128,12 +124,9 @@ func TestPlanChoices(t *testing.T) {
 	if on, why := reason(p, "e", "mtproxy"); on || why != "выключен" {
 		t.Errorf("mtproxy: %v %q", on, why)
 	}
-	// xray нужен сайт, а его выключили — xray не ставится, gemini (ему нужен xray) тоже
+	// xray нужен сайт, а его выключили — xray не ставится
 	if on, why := reason(p, "e", "xray"); on || !strings.Contains(why, "выключен") {
 		t.Errorf("xray без nginx-tls: %v %q", on, why)
-	}
-	if on, why := reason(p, "e", "gemini"); on || !strings.Contains(why, "VLESS") {
-		t.Errorf("gemini без xray: %v %q", on, why)
 	}
 	// основу выключить нельзя
 	i.Nodes["e"].Modules["base-host"] = map[string]any{"enabled": false}

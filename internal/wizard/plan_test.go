@@ -63,7 +63,7 @@ func TestPlanCascade(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := todo(p)
-	if len(got) != 18 || got[0] != "x:base-host" || got[1] != "e:base-host" || got[4] != "x:cascade-awg0" || got[5] != "e:cascade-awg0" {
+	if len(got) != 19 || got[0] != "x:base-host" || got[1] != "e:base-host" || got[4] != "x:cascade-awg0" || got[5] != "e:cascade-awg0" {
 		t.Fatalf("порядок: %v", got)
 	}
 	if on, why := reason(p, "e", "split-routing"); !on || !strings.Contains(why, "нужен для") {

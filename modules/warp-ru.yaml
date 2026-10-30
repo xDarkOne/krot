@@ -1,0 +1,60 @@
+# Манифест модуля krot. Схема: _schema.yaml. Описание: docs/20-server-modules/warp-ru.md
+name: warp-ru
+doc: docs/20-server-modules/warp-ru.md
+roles:
+- entry
+topology:
+- cascade
+requires:
+- cascade-awg0
+- split-routing
+- xray
+- amneziawg
+conflicts: []
+resources:
+  ram_mb: 15
+  disk_mb: 1
+params: []
+secrets: []
+ports: []
+nft:
+  own:
+  - ip warpru (masquerade и MSS на интерфейсе awgw)
+ip_rules:
+- {prio: 201, rule: fwmark 0x5 → main (внешние пакеты самого туннеля WARP)}
+- {prio: 202, rule: to <точки входа Cloudflare и адреса из bypass-domains> → main}
+- {prio: 203, rule: fwmark 0x4 → 201 (российский трафик xray)}
+- {prio: 204, rule: fwmark 0x1 → 201 (российский трафик ядерных клиентов)}
+units:
+- warp-ru.service
+files:
+- /usr/local/sbin/warp-ru
+- /etc/warp-ru/account.json
+- /etc/warp-ru/i1.txt
+- /etc/warp-ru/endpoints
+- /etc/warp-ru/bypass-domains
+- /var/lib/warp-ru/
+versions: {}
+health:
+- cmd: systemctl is-active warp-ru
+  expect: active
+- cmd: ip link show awgw >/dev/null && echo ok
+  expect: ok
+pitfalls: []
+steps:
+  preflight: agent/warp-ru/preflight.sh
+  install: agent/warp-ru/install.sh
+  verify: agent/warp-ru/verify.sh
+  rollback: agent/warp-ru/rollback.sh
+deadman_sec: 300
+catalog:
+  group: cascade
+  order: 75
+  default: true
+  place:
+    cascade:
+    - entry
+  title: Российский трафик через WARP
+  what: Российские сайты видят адрес Cloudflare, а не российского хостинга
+  why: Часть российских сервисов (банки, госуслуги) подозрительно относится к адресам хостингов; WARP снижает риск блокировок. При обрыве сам возвращается на прямой выход.
+  cost: ≈15 МБ памяти, UDP наружу к Cloudflare

@@ -38,6 +38,7 @@ XRAY_CONF = "/usr/local/etc/xray/config.json"
 SB_CONF = "/etc/sing-box/config.json"
 RU_NETS = "/var/lib/vpnkit/ru-nets.txt"
 SPLIT_CONF = "/etc/dnsmasq.d/10-vpnkit-split.conf"
+WARP_DIR = "/etc/warp-ru"
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,32}$")
 PRIVATE = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "169.254.0.0/16", "100.64.0.0/10"]
 
@@ -132,14 +133,28 @@ def xray_config(u, x):
     rules.append({"ip": ["127.0.0.1/32"], "port": 53, "outboundTag": "direct"})
     # клиентам нечего делать во внутренних сетях узла: панели, socks, соседние службы (P-17)
     rules.append({"ip": PRIVATE, "outboundTag": "block"})
+    # модуль warp-ru: российское выходит через Cloudflare WARP (outbound с меткой 4), а сайты из
+    # bypass-domains, не открывающиеся с адресов Cloudflare, — напрямую
+    warp = cascade and os.path.exists(WARP_DIR + "/account.json")
+    ru_out = "ru-exit" if warp else "direct"
+    if warp:
+        try:
+            bypass = [l.split("#")[0].strip() for l in open(WARP_DIR + "/bypass-domains")]
+        except OSError:
+            bypass = []
+        bypass = [d for d in bypass if d]
+        if bypass:
+            rules.append({"domain": bypass, "outboundTag": "direct"})
     if cascade:
         if zones:
-            rules.append({"domain": ["domain:" + z for z in zones], "outboundTag": "direct"})
-        rules.append({"ip": nets, "outboundTag": "direct"})
+            rules.append({"domain": ["domain:" + z for z in zones], "outboundTag": ru_out})
+        rules.append({"ip": nets, "outboundTag": ru_out})
     dnsmasq = subprocess.run(["systemctl", "is-active", "--quiet", "dnsmasq"]).returncode == 0
     out_cascade = {"tag": "cascade", "protocol": "freedom", "settings": {"domainStrategy": "UseIPv4"},
                    "streamSettings": {"sockopt": {"mark": 3}}}
     out_direct = {"tag": "direct", "protocol": "freedom", "settings": {"domainStrategy": "UseIPv4"}}
+    out_ru = {"tag": "ru-exit", "protocol": "freedom", "settings": {"domainStrategy": "UseIPv4"},
+              "streamSettings": {"sockopt": {"mark": 4}}}
     return {
         "log": {"loglevel": "warning"},
         # dnsmasq узла уже делит DNS (российские зоны → российский резолвер) — одна правда с AWG
@@ -158,7 +173,7 @@ def xray_config(u, x):
              "settings": {"auth": "noauth", "udp": True}, "sniffing": SNIFFING},
         ],
         # первый outbound — по умолчанию: на entry всё не российское уходит в каскад
-        "outbounds": ([out_cascade, out_direct] if cascade else [out_direct]) +
+        "outbounds": ([out_cascade, out_direct] if cascade else [out_direct]) + ([out_ru] if warp else []) +
                      [{"tag": "block", "protocol": "blackhole"}],
         # AsIs: домены ловятся доменными правилами, адреса — адресными, без резолва на каждое соединение
         "routing": {"domainStrategy": "AsIs", "rules": rules},

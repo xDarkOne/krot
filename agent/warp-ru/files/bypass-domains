@@ -1,0 +1,5 @@
+# Домены, которые должны идти напрямую, а не через WARP (проверено 29.10.2026: через Cloudflare не открываются).
+domain:lkfl2.nalog.ru
+domain:service.nalog.ru
+domain:mos.ru
+domain:mail.ru

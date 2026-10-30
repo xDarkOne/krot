@@ -47,12 +47,16 @@ fields:
 registries:
   ip_rule_priorities:
     '200': from entry tunnel ip → 200
+    201-204: warp-ru (туннель WARP, точки входа Cloudflare, метки 0x4 и 0x1 → таблица 201)
     205-209: клиентские сети fwmark 0x1 → main
     '207': fwmark 0x3 → 200
     210-214: клиентские сети → 200
   fwmarks:
     '0x1': split (РФ напрямую)
     '0x3': cascade (xray, STUN, DNS наружу)
+    '0x4': warp-ru (российский трафик xray)
+    '0x5': warp-ru (внешние пакеты самого туннеля WARP)
     '0x40000000': zapret2 desync
   tables:
     '200': каскад → awg0
+    '201': российский трафик → awgw (WARP) или прямой выход

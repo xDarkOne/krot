@@ -1,0 +1,211 @@
+#!/bin/bash
+# Российский трафик клиентов входа выходит через Cloudflare WARP (AmneziaWG), а не с адреса хостинга.
+#   warp-ru start   поднять интерфейс awgw, таблицу 201, правила и NAT
+#   warp-ru watch   следить за связью: при обрыве российский трафик идёт напрямую, при восстановлении возвращается
+#   warp-ru stop    снять всё: российский трафик снова выходит напрямую (правила fwmark 1 → main остаются как были)
+#   warp-ru status
+#   warp-ru init    первый аккаунт (при установке модуля)
+#   warp-ru renew   завести новый аккаунт WARP (сторож делает это сам после 10 минут без связи, не чаще раза в 6 часов)
+# Метки: 0x1 ставит таблица inet vpnkit_split (ядерные клиенты), 0x4 ставит Xray (outbound ru-exit).
+# Модуль krot warp-ru: docs/20-server-modules/warp-ru.md
+set -u
+DEV=awgw TBL=201 MARK_OUT=5 MARK_XRAY=4 MARK_SPLIT=1 PRIO=203
+ACC=/etc/warp-ru/account.json
+DIR=/etc/warp-ru            # account.json (ключ и адрес WARP), i1.txt (маска), endpoints
+STATE=/var/lib/warp-ru
+RENEW_AFTER=600       # секунд без связи, после которых заводим новый аккаунт
+RENEW_MIN_GAP=21600   # и не чаще, чем раз в 6 часов
+PROBE="https://www.cloudflare.com/cdn-cgi/trace"
+log() { echo "warp-ru: $*"; }
+# адрес этого узла в туннеле до выхода: с него идёт регистрация аккаунта (API Cloudflare с российских адресов закрыт)
+tun_addr() { ip -4 -o addr show dev awg0 2>/dev/null | awk '{sub("/.*","",$4); print $4; exit}'; }
+
+endpoint() { cat "$STATE/endpoint" 2>/dev/null || head -n1 "$DIR/endpoints"; }
+
+conf() {
+	local priv ppub
+	priv=$(python3 -c 'import json;print(json.load(open("'$ACC'"))["private_key"])')
+	ppub=$(python3 -c 'import json;print(json.load(open("'$ACC'"))["peer_public_key"])')
+	cat <<C
+[Interface]
+PrivateKey = $priv
+FwMark = $MARK_OUT
+Jc = 4
+Jmin = 40
+Jmax = 70
+S1 = 0
+S2 = 0
+H1 = 1
+H2 = 2
+H3 = 3
+H4 = 4
+I1 = $(cat "$DIR/i1.txt")
+[Peer]
+PublicKey = $ppub
+AllowedIPs = 0.0.0.0/0
+Endpoint = $(endpoint)
+PersistentKeepalive = 25
+C
+}
+
+rules_add() {
+	# внешние пакеты самого туннеля всегда идут по main, иначе они уйдут обратно в туннель и зациклятся
+	ip rule add fwmark 0x$MARK_OUT lookup main priority 201 2>/dev/null
+	local ep
+	for ep in $(cut -d: -f1 "$DIR/endpoints" | sort -u); do ip rule add to "$ep/32" lookup main priority 202 2>/dev/null; done
+	ip rule add fwmark 0x$MARK_XRAY lookup $TBL priority $PRIO 2>/dev/null
+	ip rule add fwmark 0x$MARK_SPLIT lookup $TBL priority $((PRIO + 1)) 2>/dev/null
+}
+rules_del() {
+	ip rule del fwmark 0x$MARK_OUT lookup main priority 201 2>/dev/null
+	local ep
+	for ep in $(cut -d: -f1 "$DIR/endpoints" | sort -u); do ip rule del to "$ep/32" lookup main priority 202 2>/dev/null; done
+	ip rule del fwmark 0x$MARK_XRAY lookup $TBL priority $PRIO 2>/dev/null
+	ip rule del fwmark 0x$MARK_SPLIT lookup $TBL priority $((PRIO + 1)) 2>/dev/null
+}
+# таблица 201: клиентские подсети (чтобы ответы и трафик между клиентами шли как раньше) + выход
+routes_base() {
+	# клиентские сети входа (awg*/wg* кроме туннеля до выхода и самого WARP): ответы идут как раньше
+	ip -4 route show table main proto kernel scope link | while read -r net _ d _; do
+		case "$d" in awg0|awgw|awgt|eth*|ens*|enp*|lo|docker*|br-*|veth*) continue ;; esac
+		ip route replace "$net" dev "$d" table $TBL
+	done
+}
+exit_warp()   { ip route replace default dev $DEV table $TBL; }
+exit_direct() {
+  # шлюз берём из основной таблицы: при клонировании сервера на другой IP он меняется
+  local gw dev
+  gw=$(ip -4 route show default table main | awk "NR==1{for(i=1;i<NF;i++) if(\$i==\"via\") print \$(i+1)}")
+  dev=$(ip -4 route show default table main | awk "NR==1{for(i=1;i<NF;i++) if(\$i==\"dev\") print \$(i+1)}")
+  if [ -n "$gw" ] && [ -n "$dev" ]; then ip route replace default via $gw dev $dev onlink table $TBL
+  elif [ -n "$dev" ]; then ip route replace default dev $dev table $TBL; fi
+}
+
+start() {
+	mkdir -p "$STATE"
+	ip link del $DEV 2>/dev/null
+	ip link add dev $DEV type amneziawg || { log "нет модуля amneziawg"; return 1; }
+	conf | awg setconf $DEV /dev/stdin || { ip link del $DEV; return 1; }
+	ip addr add "$(python3 -c 'import json;print(json.load(open("'$ACC'"))["address"])')/32" dev $DEV
+	ip link set $DEV mtu 1280 up
+	nft -f - <<N
+add table ip warpru
+flush table ip warpru
+table ip warpru {
+	chain post {
+		type nat hook postrouting priority srcnat; policy accept;
+		oifname "$DEV" masquerade
+	}
+	chain mss {
+		type filter hook forward priority mangle; policy accept;
+		oifname "$DEV" tcp flags syn tcp option maxseg size set rt mtu
+		iifname "$DEV" tcp flags syn tcp option maxseg size set rt mtu
+	}
+}
+N
+	routes_base
+	exit_direct          # пока связь не проверена, ничего не меняется
+	rules_add
+	log "поднят, endpoint $(endpoint)"
+}
+
+stop() {
+	for ip in $(cat "$STATE/bypass.ips" 2>/dev/null); do ip rule del to "$ip/32" lookup main priority 202 2>/dev/null; done
+	rm -f "$STATE/bypass.ips"
+	rules_del
+	ip route flush table $TBL 2>/dev/null
+	nft delete table ip warpru 2>/dev/null
+	ip link del $DEV 2>/dev/null
+	log "снят: российский трафик идёт напрямую"
+}
+
+# Сайты, которые открываются напрямую, но не через Cloudflare (блокируют его адреса), идут напрямую и для
+# клиентов на ядерной маршрутизации: адреса доменов из bypass-domains получают правило «в main».
+bypass() {
+	local f="$DIR/bypass-domains" new="$STATE/bypass.new" ip
+	[ -f "$f" ] || return 0
+	: > "$new"
+	for d in $(sed 's/#.*//; s/^domain://' "$f"); do getent ahostsv4 "$d" | awk '{print $1}' | sort -u >> "$new"; done
+	sort -u -o "$new" "$new"
+	for ip in $(comm -13 "$new" "$STATE/bypass.ips" 2>/dev/null); do ip rule add to "$ip/32" lookup main priority 202 2>/dev/null; done
+	for ip in $(comm -23 "$STATE/bypass.ips" "$new" 2>/dev/null); do ip rule del to "$ip/32" lookup main priority 202 2>/dev/null; done
+	mv "$new" "$STATE/bypass.ips"
+}
+
+# Новый анонимный аккаунт WARP. API Cloudflare с msk напрямую недоступен, поэтому запрос идёт с адреса
+# туннеля до Амстердама (правило 200). Новый аккаунт проверяется на отдельном интерфейсе и подменяет
+# старый, только если через него идёт трафик.
+renew() {
+	local force="${1:-}" now last tmp priv pub resp t=awgt
+	mkdir -p "$STATE"
+	now=$(date +%s); last=$(cat "$STATE/renew.last" 2>/dev/null || echo 0)
+	if [ "$force" = init ]; then force=force; fi
+	if [ "$force" != force ] && [ $((now - last)) -lt $RENEW_MIN_GAP ]; then log "обновление не чаще раза в $((RENEW_MIN_GAP / 3600)) ч"; return 1; fi
+	echo "$now" > "$STATE/renew.last"
+	priv=$(awg genkey); pub=$(echo "$priv" | awg pubkey)
+	resp=$(curl -s -m 25 --interface "$(tun_addr)" -X POST https://api.cloudflareclient.com/v0a2158/reg \
+		-H 'Content-Type: application/json' -H 'CF-Client-Version: a-6.3-2158' -H 'User-Agent: okhttp/3.12.1' \
+		-d "{\"key\":\"$pub\",\"install_id\":\"\",\"fcm_token\":\"\",\"tos\":\"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\",\"model\":\"PC\",\"serial_number\":\"\",\"locale\":\"en_US\"}")
+	tmp=$(mktemp "$STATE/acc.XXXXXX")
+	if ! echo "$resp" | PRIV="$priv" python3 -c '
+import sys, json, os
+d = json.load(sys.stdin)
+json.dump({"private_key": os.environ["PRIV"], "peer_public_key": d["config"]["peers"][0]["public_key"],
+           "address": d["config"]["interface"]["addresses"]["v4"]}, open(sys.argv[1], "w"))' "$tmp" 2>/dev/null; then
+		rm -f "$tmp"; log "регистрация нового аккаунта не удалась"; return 1
+	fi
+	# проверка на отдельном интерфейсе с новыми ключами
+	ip link del $t 2>/dev/null; ip link add dev $t type amneziawg || { rm -f "$tmp"; return 1; }
+	ACC="$tmp" conf | awg setconf $t /dev/stdin && ip addr add "$(python3 -c 'import json;print(json.load(open("'$tmp'"))["address"])')/32" dev $t && ip link set $t mtu 1280 up
+	local ok=1 i
+	for i in 1 2 3 4; do sleep 3; curl -s -m 6 --interface $t "$PROBE" 2>/dev/null | grep -q '^warp=on' && { ok=0; break; }; done
+	ip link del $t 2>/dev/null
+	if [ $ok -ne 0 ]; then rm -f "$tmp"; log "новый аккаунт не пропустил трафик, остаёмся на старом"; return 1; fi
+	cp -a "$ACC" "$ACC.prev" 2>/dev/null
+	chmod 600 "$tmp"; mv "$tmp" "$ACC"
+	if [ "${1:-}" = init ]; then log "аккаунт создан и проверен"; return 0; fi
+	log "аккаунт обновлён (старый в $ACC.prev), перезапуск"
+	systemctl restart warp-ru
+}
+
+probe() { curl -s -m 6 --interface $DEV "$PROBE" 2>/dev/null | grep -q '^warp=on'; }
+
+rotate() {
+	local cur next list n i
+	cur=$(endpoint); mapfile -t list < "$DIR/endpoints"; n=${#list[@]}
+	for i in "${!list[@]}"; do [ "${list[$i]}" = "$cur" ] && break; done
+	next=${list[$(( (i + 1) % n ))]}
+	echo "$next" > "$STATE/endpoint"
+	awg set $DEV peer "$(python3 -c 'import json;print(json.load(open("'$ACC'"))["peer_public_key"])')" endpoint "$next"
+	log "смена точки: $cur -> $next"
+}
+
+watch() {
+	local ok=0 bad=0 mode=direct n=0
+	while :; do
+		[ $((n % 40)) -eq 0 ] && bypass
+		n=$((n + 1))
+		if probe || probe; then
+			bad=0; ok=$((ok + 1))
+			if [ $mode = direct ] && [ $ok -ge 2 ]; then exit_warp; mode=warp; log "связь есть, российский трафик идёт через WARP"; fi
+		else
+			ok=0; bad=$((bad + 1))
+			if [ $mode = warp ] && [ $bad -ge 2 ]; then exit_direct; mode=direct; log "связи нет, российский трафик идёт напрямую"; fi
+			[ $((bad % 3)) -eq 0 ] && rotate
+			[ $((bad * 15)) -ge $RENEW_AFTER ] && { renew; bad=0; }
+		fi
+		sleep 15
+	done
+}
+
+status() {
+	ip -br link show $DEV 2>/dev/null || { echo "интерфейса нет"; return 1; }
+	echo "default в таблице $TBL: $(ip route show default table $TBL)"
+	awg show $DEV latest-handshakes transfer endpoints 2>/dev/null
+	probe && echo "WARP: связь есть" || echo "WARP: связи нет"
+}
+
+case "${1:-}" in
+	start) start ;; init) renew init ;; stop) stop ;; watch) watch ;; status) status ;; renew) renew force ;;
+	*) sed -n 2,10p "$0"; exit 2 ;;
+esac

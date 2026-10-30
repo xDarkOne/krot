@@ -1,0 +1,154 @@
+#!/usr/bin/python3
+# Блок входящих соединений от сканеров и госсетей: nftables, таблица inet guard.
+# Списки: shadow-netlab/traffic-guard-lists. Каждый список скачивается, целиком
+# проверяется (любая непонятная строка — отказ) и сверяется с границами; при
+# сбое остаётся прошлая копия из кэша. Своя таблица: чужие правила не трогаются.
+#   traffic-guard [apply]   скачать, проверить, применить (по умолчанию)
+#   traffic-guard status    счётчики и размеры наборов
+#   traffic-guard remove    снять защиту
+import ipaddress, json, os, subprocess, sys, tempfile, urllib.request
+
+BASE = "https://raw.githubusercontent.com/shadow-netlab/traffic-guard-lists/refs/heads/main/public"
+# имя: (файл, минимум записей, максимум, допустимое изменение размера)
+LISTS = {
+    "antiscanner": ("antiscanner.list", 50, 5000, 0.5),
+    "skipa": ("skipa.list", 50, 5000, 0.5),
+    "gov": ("government_networks.list", 2000, 50000, 0.3),
+}
+DIR = "/var/lib/traffic-guard"
+EXEMPT = "/etc/traffic-guard.exempt"
+ALWAYS = ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10",
+          "::1/128", "fe80::/10", "fc00::/7"]
+
+
+def log(msg):
+    print("traffic-guard:", msg, flush=True)
+
+
+def parse(text):
+    nets = []
+    for line in text.splitlines():
+        line = line.split("#")[0].strip()
+        if line:
+            nets.append(ipaddress.ip_network(line, strict=False))
+    return nets
+
+
+def load(name):
+    fname, lo, hi, chg = LISTS[name]
+    cache = os.path.join(DIR, name + ".list")
+    old = None
+    if os.path.exists(cache):
+        try:
+            old = parse(open(cache).read())
+        except ValueError:
+            old = None
+    try:
+        req = urllib.request.Request(f"{BASE}/{fname}", headers={"User-Agent": "traffic-guard"})
+        text = urllib.request.urlopen(req, timeout=30).read().decode()
+        nets = parse(text)
+        if not lo <= len(nets) <= hi:
+            raise ValueError(f"{len(nets)} записей вне границ {lo}..{hi}")
+        if old and abs(len(nets) - len(old)) > chg * len(old):
+            raise ValueError(f"размер {len(old)} -> {len(nets)}, изменение больше {int(chg * 100)}%")
+        with tempfile.NamedTemporaryFile("w", dir=DIR, delete=False) as f:
+            f.write(text)
+        os.replace(f.name, cache)
+        return nets, "обновлён"
+    except Exception as e:
+        if old:
+            return old, f"из кэша ({e})"
+        log(f"{name}: нет ни свежего, ни кэшированного списка ({e}) — пропущен")
+        return [], "пропущен"
+
+
+def uplinks():
+    devs = set()
+    for fam in ("-4", "-6"):
+        out = subprocess.run(["ip", "-j", fam, "route", "show", "default"], capture_output=True, text=True).stdout
+        for r in json.loads(out or "[]"):
+            devs.add(r["dev"])
+    return sorted(devs)
+
+
+def elems(nets, ver):
+    return ", ".join(str(n) for n in ipaddress.collapse_addresses([n for n in nets if n.version == ver]))
+
+
+def build(lists, exempt, devs):
+    q = lambda xs: ", ".join(f'"{x}"' for x in xs)
+    o = ["add table inet guard", "flush table inet guard", "delete table inet guard", "table inet guard {"]
+    for name, nets in [("exempt", exempt)] + list(lists.items()):
+        for ver, t in ((4, "ipv4_addr"), (6, "ipv6_addr")):
+            e = elems(nets, ver)
+            o.append(f"  set {name}{ver} {{ type {t}; flags interval; auto-merge;" + (f" elements = {{ {e} }};" if e else "") + " }")
+    o += ["  chain pre {", "    type filter hook prerouting priority raw; policy accept;",
+          f"    iifname != {{ {q(devs)} }} return",
+          "    ip saddr @exempt4 return", "    ip6 saddr @exempt6 return"]
+    for name in lists:
+        o += [f"    ip saddr @{name}4 counter name {name}_hits drop"]
+        o += [f"    ip6 saddr @{name}6 counter name {name}_hits drop"]
+    o.append("  }")
+    # именованные счётчики объявляются до цепочки
+    cnt = [f"  counter {n}_hits {{ }}" for n in lists]
+    i = o.index("  chain pre {")
+    o[i:i] = cnt
+    o.append("}")
+    return "\n".join(o) + "\n"
+
+
+def nft(text, check=False):
+    return subprocess.run(["nft"] + (["-c"] if check else []) + ["-f", "-"], input=text, capture_output=True, text=True)
+
+
+def apply():
+    os.makedirs(DIR, exist_ok=True)
+    lists, st = {}, {}
+    for name in LISTS:
+        lists[name], st[name] = load(name)
+    lists = {k: v for k, v in lists.items() if v}
+    if not lists:
+        log("ни одного списка — правила не менялись")
+        return 1
+    ex = parse("\n".join(ALWAYS))
+    if os.path.exists(EXEMPT):
+        ex += parse(open(EXEMPT).read())
+    devs = uplinks()
+    if not devs:
+        log("не найден интерфейс маршрута по умолчанию — правила не менялись")
+        return 1
+    text = build(lists, ex, devs)
+    r = nft(text, check=True)
+    if r.returncode:
+        log("nft отклонил набор: " + r.stderr.strip())
+        return 1
+    r = nft(text)
+    if r.returncode:
+        log("не применилось: " + r.stderr.strip())
+        return 1
+    log("применено; аплинк " + ",".join(devs) + "; " + "; ".join(f"{k}: {len(v)} сетей, {st[k]}" for k, v in lists.items()))
+    return 0
+
+
+def status():
+    r = subprocess.run(["nft", "-j", "list", "table", "inet", "guard"], capture_output=True, text=True)
+    if r.returncode:
+        print("таблицы inet guard нет")
+        return 1
+    for it in json.loads(r.stdout)["nftables"]:
+        c = it.get("counter")
+        if c:
+            print(f"{c['name']}: пакетов {c['packets']}, байт {c['bytes']}")
+    return 0
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "apply"
+    if cmd == "apply":
+        sys.exit(apply())
+    if cmd == "status":
+        sys.exit(status())
+    if cmd == "remove":
+        sys.exit(subprocess.run(["nft", "delete", "table", "inet", "guard"]).returncode)
+    print(__doc__)
+    sys.exit(2)

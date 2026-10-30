@@ -1,0 +1,58 @@
+# Манифест модуля krot. Схема: _schema.yaml. Описание: docs/20-server-modules/traffic-guard.md
+name: traffic-guard
+doc: docs/20-server-modules/traffic-guard.md
+roles:
+- entry
+- exit
+- solo
+requires:
+- base-host
+conflicts: []
+resources:
+  ram_mb: 5
+  disk_mb: 2
+  note: наборы nftables около 5 тысяч записей
+params:
+- name: exempt
+  type: list
+  default: ''
+  note: дополнительные адреса, которые защита не трогает никогда (адреса узлов и пульта добавляются сами)
+secrets: []
+ports: []
+nft:
+  own:
+  - inet guard (prerouting raw, drop по спискам сканеров и госсетей)
+ip_rules: []
+units:
+- traffic-guard.service
+- traffic-guard.timer
+files:
+- /usr/local/sbin/traffic-guard
+- /etc/traffic-guard.exempt
+- /var/lib/traffic-guard/
+versions: {}
+health:
+- cmd: nft list table inet guard >/dev/null && echo ok
+  expect: ok
+- cmd: systemctl is-enabled traffic-guard.timer
+  expect: enabled
+pitfalls: []
+steps:
+  install: agent/traffic-guard/install.sh
+  verify: agent/traffic-guard/verify.sh
+  rollback: agent/traffic-guard/rollback.sh
+  uninstall: agent/traffic-guard/uninstall.sh
+catalog:
+  group: extra
+  order: 105
+  default: true
+  place:
+    cascade:
+    - exit
+    - entry
+    solo:
+    - solo
+  title: Защита от сканеров
+  what: Отсекает известные сканеры и сети госорганов на входе, списки обновляются раз в сутки
+  why: Меньше проб и обнаружений серверов; адреса ваших узлов и компьютера в исключениях, запереть себя нельзя.
+  cost: ≈5 МБ памяти, один запрос к GitHub в сутки

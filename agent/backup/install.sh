@@ -13,7 +13,7 @@ echo "$VK_RECIPIENT" | put /etc/vpnkit/backup.recipients 600
 paths="/etc/amnezia /etc/wireguard /etc/nftables.conf /etc/nftables.d /etc/dnsmasq.d /etc/systemd/system
 /etc/sysctl.d /etc/ssh/sshd_config.d /root/.ssh /etc/fail2ban/jail.d /etc/vpnkit /var/lib/vpnkit/modules
 /var/lib/vpnkit/ru-nets.txt /usr/local/sbin /etc/letsencrypt /etc/nginx /usr/local/etc/xray /etc/xray /etc/sing-box
-/var/www /etc/network/interfaces /etc/warp-ru /var/lib/warp-ru $VK_EXTRA_PATHS"
+/var/www /etc/network/interfaces /etc/warp-ru /var/lib/warp-ru /etc/traffic-guard.exempt $VK_EXTRA_PATHS"
 cat <<EOF | put /etc/vpnkit/backup.conf 600
 # vpnkit backup ($VK_NODE). Пишет пульт; описание полей — /usr/local/sbin/vpnkit-backup.sh
 NODE=$VK_NODE

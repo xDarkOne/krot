@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"sort"
 	"strings"
 
 	"github.com/xDarkOne/krot/agent"
@@ -42,6 +43,8 @@ func Prepare(inv *inventory.Inventory, n *inventory.Node, module string, sec *se
 		return prepareMTProxy(n, p, sec)
 	case "backup":
 		return prepareBackup(n, p)
+	case "traffic-guard":
+		return prepareTrafficGuard(inv, p)
 	case "monitoring":
 		return prepareMonitoring(inv, n, p, sec)
 	}
@@ -290,6 +293,20 @@ func prepareBackup(n *inventory.Node, p map[string]string) (map[string]string, e
 			p["TIME"] = "04:30"
 		}
 	}
+	return p, nil
+}
+
+// prepareTrafficGuard — адреса всех узлов (для исключений): после клонирования или переезда
+// узлы не должны блокировать друг друга.
+func prepareTrafficGuard(inv *inventory.Inventory, p map[string]string) (map[string]string, error) {
+	var hosts []string
+	for _, x := range inv.Nodes {
+		if net.ParseIP(x.Host) != nil {
+			hosts = append(hosts, x.Host)
+		}
+	}
+	sort.Strings(hosts)
+	p["NODES"] = strings.Join(hosts, " ")
 	return p, nil
 }
 

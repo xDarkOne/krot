@@ -63,15 +63,15 @@ func TestPlanCascade(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := todo(p)
-	if len(got) != 19 || got[0] != "x:base-host" || got[1] != "e:base-host" || got[4] != "x:cascade-awg0" || got[5] != "e:cascade-awg0" {
+	if len(got) != 21 || got[0] != "x:base-host" || got[1] != "e:base-host" || got[4] != "x:cascade-awg0" || got[5] != "e:cascade-awg0" {
 		t.Fatalf("порядок: %v", got)
 	}
 	if on, why := reason(p, "e", "split-routing"); !on || !strings.Contains(why, "нужен для") {
 		t.Errorf("split-routing на входе: %v %q", on, why)
 	}
 	p, _ = Plan(inv(false), nil)
-	if n := len(todo(p)); n != 12 {
-		t.Errorf("без домена шагов %d, ждали 12: %v", n, todo(p))
+	if n := len(todo(p)); n != 14 {
+		t.Errorf("без домена шагов %d, ждали 14: %v", n, todo(p))
 	}
 	if on, why := reason(p, "e", "xray"); on || why != "нужен домен" {
 		t.Errorf("xray без домена: %v %q", on, why)
@@ -84,7 +84,7 @@ func TestPlanSolo(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := strings.Join(todo(p), " ")
-	want := "s:base-host s:amneziawg s:client-awg s:nginx-tls s:xray s:hysteria2 s:subscriptions s:mtproxy s:backup s:monitoring"
+	want := "s:base-host s:amneziawg s:client-awg s:nginx-tls s:xray s:hysteria2 s:subscriptions s:mtproxy s:traffic-guard s:backup s:monitoring"
 	if got != want {
 		t.Fatalf("solo:\n got %s\nwant %s", got, want)
 	}

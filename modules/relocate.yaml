@@ -1,0 +1,48 @@
+# Манифест модуля krot. Схема: _schema.yaml. Описание: docs/20-server-modules/relocate.md
+name: relocate
+doc: docs/20-server-modules/relocate.md
+roles:
+- entry
+- exit
+- solo
+requires:
+- base-host
+conflicts: []
+resources:
+  ram_mb: 1
+  disk_mb: 1
+params: []
+secrets: []
+ports: []
+nft: {}
+ip_rules: []
+units: []
+files:
+- /usr/local/sbin/relocate
+- /usr/local/sbin/relocate-<имя узла>
+- /usr/local/sbin/vpnkit-reip
+- /etc/vpnkit/relocate.conf
+versions: {}
+health:
+- cmd: test -x /usr/local/sbin/relocate && echo ok
+  expect: ok
+pitfalls: []
+steps:
+  install: agent/relocate/install.sh
+  verify: agent/relocate/verify.sh
+  rollback: agent/relocate/rollback.sh
+  uninstall: agent/relocate/uninstall.sh
+catalog:
+  group: extra
+  order: 115
+  default: true
+  place:
+    cascade:
+    - exit
+    - entry
+    solo:
+    - solo
+  title: Переезд на новый адрес
+  what: "Команда relocate на сервере — после клонирования у хостера сама переписывает прошитые IP"
+  why: Сервер можно склонировать на другой адрес и за пару минут вернуть в строй — останется поменять записи домена. Ничего не делает, пока не запущена.
+  cost: пара скриптов, ничего не работает в фоне

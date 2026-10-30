@@ -1,0 +1,57 @@
+#!/bin/bash
+# vpnkit-reip: после клонирования узла на другой адрес переписывает прошитые IP.
+# Запускается на КАЖДОМ узле с одним и тем же набором --map (свой адрес, адрес соседа, шлюз).
+#   vpnkit-reip --map СТАРЫЙ НОВЫЙ [--map ...]          показать, что изменится (ничего не пишет)
+#   vpnkit-reip --map СТАРЫЙ НОВЫЙ [--map ...] --apply  изменить, перезапустить службы, проверить
+# Пример: --map 203.0.113.10 198.51.100.7 --map 203.0.113.1 198.51.100.1
+# Сетевую маску (/24) скрипт не трогает: если она другая, поправь /etc/network/interfaces руками.
+# Сеть (networking) не перезапускается, чтобы не оборвать ssh: адрес вступит в силу после reboot.
+set -u
+# Файлы Крота, где прошиты адреса. Свои добавляйте по одному пути в строке в /etc/vpnkit/reip.extra.
+FILES="/etc/network/interfaces /etc/hosts /etc/vpnkit/*.conf /etc/traffic-guard.exempt
+/etc/amnezia/amneziawg/*.conf /etc/wireguard/*.conf /etc/sing-box/*.json /etc/telemt/telemt.toml
+/etc/nftables.d/*.nft $(cat /etc/vpnkit/reip.extra 2>/dev/null)"
+UNITS="awg-quick@awg0 awg-quick@awg1 awg-quick@awg2 traffic-guard telemt sing-box xray warp-ru nginx"
+OLD=(); NEW=(); APPLY=0
+while [ $# -gt 0 ]; do
+  case $1 in
+    --map) OLD+=("$2"); NEW+=("$3"); shift 3;;
+    --apply) APPLY=1; shift;;
+    *) echo "неизвестный аргумент: $1"; sed -n 2,9p "$0"; exit 2;;
+  esac
+done
+[ ${#OLD[@]} -gt 0 ] || { sed -n 2,9p "$0"; exit 2; }
+for i in "${!OLD[@]}"; do
+  for v in "${OLD[$i]}" "${NEW[$i]}"; do
+    [[ $v =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || { echo "не IPv4: $v"; exit 2; }
+  done
+done
+TS=$(date +%Y%m%d-%H%M%S); BAK=/root/reip-bak-$TS; changed=0
+for f in $FILES; do
+  [ -f "$f" ] || continue
+  for i in "${!OLD[@]}"; do
+    if grep -qP "(?<![\d.])${OLD[$i]//./\\.}(?!\d)" "$f"; then
+      echo "$f: ${OLD[$i]} -> ${NEW[$i]} ($(grep -cP "(?<![\d.])${OLD[$i]//./\\.}(?!\d)" "$f") стр.)"
+      if [ $APPLY = 1 ]; then
+        mkdir -p "$BAK$(dirname "$f")"; [ -e "$BAK$f" ] || cp -a "$f" "$BAK$f"
+        perl -pi -e "s/(?<![\\d.])${OLD[$i]//./\\.}(?!\\d)/${NEW[$i]}/g" "$f"
+      fi
+      changed=1
+    fi
+  done
+done
+[ $changed = 0 ] && echo "ни в одном файле старых адресов не найдено"
+[ $APPLY = 1 ] || { echo "(пробный прогон: ничего не изменено; добавь --apply)"; exit 0; }
+echo "копии прежних файлов: $BAK"
+for u in $UNITS; do
+  systemctl is-enabled --quiet "$u" 2>/dev/null || continue
+  systemctl restart "$u" && echo "перезапущен $u" || echo "ОШИБКА перезапуска $u"
+done
+echo "--- проверка"
+DEV=$(ip -4 route show default | awk '{for(i=1;i<NF;i++) if($i=="dev") {print $(i+1); exit}}')
+IFACE_IP=$(ip -4 -br a show "$DEV" | awk '{print $3}')
+echo "адрес $DEV сейчас: $IFACE_IP (в /etc/network/interfaces: $(awk '$1=="address"{print $2}' /etc/network/interfaces))"
+PEER_TUN=$(awk -F= '$1=="PEER_TUN"{print $2}' /etc/vpnkit/watch.conf)
+[ -n "$PEER_TUN" ] && { ping -c2 -W3 "$PEER_TUN" >/dev/null 2>&1 && echo "туннель до $PEER_TUN: ок" || echo "туннель до $PEER_TUN: НЕТ (соседу тоже нужен запуск с теми же --map)"; }
+systemctl is-active --quiet vpnkit-watch.timer && /usr/local/sbin/vpnkit-watch.sh >/dev/null 2>&1 && echo "vpnkit-watch: ок"
+echo "Дальше: поменять DNS-записи на новый адрес, при смене сети — reboot."

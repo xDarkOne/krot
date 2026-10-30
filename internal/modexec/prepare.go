@@ -43,6 +43,8 @@ func Prepare(inv *inventory.Inventory, n *inventory.Node, module string, sec *se
 		return prepareMTProxy(n, p, sec)
 	case "backup":
 		return prepareBackup(n, p)
+	case "relocate":
+		return prepareRelocate(inv, n, p)
 	case "traffic-guard":
 		return prepareTrafficGuard(inv, p)
 	case "monitoring":
@@ -291,6 +293,20 @@ func prepareBackup(n *inventory.Node, p map[string]string) (map[string]string, e
 		p["TIME"] = map[string]string{"exit": "04:00"}[n.Role]
 		if p["TIME"] == "" {
 			p["TIME"] = "04:30"
+		}
+	}
+	return p, nil
+}
+
+// prepareRelocate — имя узла, домен и сосед по каскаду для мастера переезда.
+func prepareRelocate(inv *inventory.Inventory, n *inventory.Node, p map[string]string) (map[string]string, error) {
+	p["NODE"], p["DOMAIN"] = n.Name, inv.Domain
+	if entry, exit, err := pair(inv); err == nil {
+		switch n {
+		case entry:
+			p["PEER_NAME"] = exit.Name
+		case exit:
+			p["PEER_NAME"] = entry.Name
 		}
 	}
 	return p, nil

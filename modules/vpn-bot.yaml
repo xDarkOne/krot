@@ -1,0 +1,55 @@
+# Манифест модуля krot. Схема: _schema.yaml. Описание: docs/20-server-modules/vpn-bot.md
+name: vpn-bot
+doc: docs/20-server-modules/vpn-bot.md
+roles:
+- entry
+- solo
+requires:
+- base-host
+- monitoring
+conflicts: []
+resources:
+  ram_mb: 30
+  disk_mb: 20
+  note: база статистики растёт медленно, хранится 90 дней
+params: []
+secrets:
+- токен и получатели берутся из оповещений (_global/alert/tg_token, tg_chats; krot alerts set)
+ports: []
+nft: {}
+ip_rules: []
+units:
+- vpn-bot.service
+- vpn-stats.service
+- vpn-stats.timer
+files:
+- /usr/local/sbin/vpn-bot.py
+- /usr/local/sbin/vpn-stats.py
+- /var/lib/vpnkit/stats.db
+versions: {}
+health:
+- cmd: systemctl is-active vpn-bot
+  expect: active
+- cmd: systemctl is-enabled vpn-stats.timer
+  expect: enabled
+pitfalls: []
+steps:
+  preflight: agent/vpn-bot/preflight.sh
+  install: agent/vpn-bot/install.sh
+  verify: agent/vpn-bot/verify.sh
+  rollback: agent/vpn-bot/rollback.sh
+  uninstall: agent/vpn-bot/uninstall.sh
+deadman_sec: 180
+catalog:
+  group: extra
+  order: 130
+  default: false
+  place:
+    cascade:
+    - entry
+    solo:
+    - solo
+  title: Telegram-бот администратора
+  what: Состояние сервера, клиенты подписки с выдачей ссылок и статистика трафика прямо в Telegram
+  why: Заводить и удалять клиентов подписки и смотреть, кто сколько качает, можно с телефона. Нужен бот оповещений (krot alerts set).
+  cost: ≈30 МБ памяти, исходящий доступ к Telegram

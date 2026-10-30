@@ -15,6 +15,8 @@
 - `/var/lib/vpnkit/ru-nets.txt` — кэш списка сетей.
 - `dnsmasq.service` — служба dnsmasq.
 - `vpnkit-ru-nets.timer` — таймер обновления списка сетей.
+- `/usr/local/sbin/vpnkit-ru-domains.sh`, `vpnkit-ru-domains.timer` (раз в сутки) — российские домены в чужих зонах из v2fly/domain-list-community (`/etc/dnsmasq.d/20-vpnkit-v2fly.conf`). При недоступном источнике или отказе dnsmasq остаётся прежний файл.
+- `/usr/local/sbin/vpnkit-ru-prune.py`, `vpnkit-ru-prune.timer` (каждые 10 минут) — убирает из `ru_domains` адреса общих облаков и CDN (Google, Cloudflare, AWS, Fastly, Akamai): иначе часть запросов к Google уходила бы напрямую с адреса хостинга, и сервис считал бы пользователя российским.
 
 dnsmasq-конфиг записывается **до** установки пакета dnsmasq. Это важно, когда локальный порт 53 уже держит systemd-resolved: без `bind-dynamic` и явного loopback-адреса dnsmasq может упасть прямо при установке пакета.
 

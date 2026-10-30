@@ -93,7 +93,27 @@ systemctl daemon-reload
 systemctl enable -q --now vpnkit-ru-nets.timer
 say "ru_nets: $(/usr/local/sbin/vpnkit-ru-nets.sh)"
 
+# --- российские домены из v2fly (раз в сутки) и чистка адресов общих облаков/CDN (каждые 10 минут)
+for f in vpnkit-ru-domains.sh vpnkit-ru-prune.py; do [ -s "$VK_RUN/src/$f" ] || die "нет файла $f от пульта"; done
+put /usr/local/sbin/vpnkit-ru-domains.sh 755 < "$VK_RUN/src/vpnkit-ru-domains.sh"
+put /usr/local/sbin/vpnkit-ru-prune.py 755 < "$VK_RUN/src/vpnkit-ru-prune.py"
+printf 'RU_RESOLVER=%s\n' "$VK_RU_RESOLVER" | put /etc/vpnkit/split.conf 644
+printf '[Unit]\nDescription=vpnkit: российские домены из v2fly\nAfter=network-online.target nftables.service\nWants=network-online.target\n[Service]\nType=oneshot\nExecStart=/usr/local/sbin/vpnkit-ru-domains.sh\n' \
+  | put /etc/systemd/system/vpnkit-ru-domains.service 644
+printf '[Unit]\nDescription=vpnkit: ежедневное обновление российских доменов\n[Timer]\nOnCalendar=daily\nRandomizedDelaySec=2h\nPersistent=true\n[Install]\nWantedBy=timers.target\n' \
+  | put /etc/systemd/system/vpnkit-ru-domains.timer 644
+printf '[Unit]\nDescription=vpnkit: чистка ru_domains от адресов облаков\nAfter=nftables.service\n[Service]\nType=oneshot\nExecStart=/usr/local/sbin/vpnkit-ru-prune.py\n' \
+  | put /etc/systemd/system/vpnkit-ru-prune.service 644
+printf '[Unit]\nDescription=vpnkit: регулярная чистка ru_domains\n[Timer]\nOnBootSec=5min\nOnUnitActiveSec=10min\nPersistent=true\n[Install]\nWantedBy=timers.target\n' \
+  | put /etc/systemd/system/vpnkit-ru-prune.timer 644
+apt_install python3 curl
+snapshot /etc/dnsmasq.d/20-vpnkit-v2fly.conf
+systemctl daemon-reload
+systemctl enable -q --now vpnkit-ru-domains.timer vpnkit-ru-prune.timer
+for t in vpnkit-ru-domains.timer vpnkit-ru-prune.timer; do echo $t >> "$VK_RUN/created.list"; done
+
 systemctl enable -q dnsmasq
 # не reload: dnsmasq по SIGHUP не перечитывает конфиг (P-15); и только если конфиг менялся
 if changed /etc/dnsmasq.d/ || ! systemctl is-active -q dnsmasq; then systemctl restart dnsmasq; say "dnsmasq перезапущен"; fi
 say "dnsmasq: 127.0.0.1, российские зоны → $VK_RU_RESOLVER с пометкой в ru_domains"
+/usr/local/sbin/vpnkit-ru-domains.sh >/dev/null 2>&1 && say "v2fly: российские домены загружены" || say "v2fly пока недоступен — список подтянется таймером"

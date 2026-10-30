@@ -32,11 +32,17 @@ ip_rules: []
 units:
 - dnsmasq.service
 - vpnkit-ru-nets.timer
+- vpnkit-ru-domains.timer
+- vpnkit-ru-prune.timer
 files:
 - /etc/dnsmasq.d/10-vpnkit-split.conf
 - /etc/nftables.d/25-vpnkit-split.nft
 - /usr/local/sbin/vpnkit-ru-nets.sh
 - /var/lib/vpnkit/ru-nets.txt
+- /usr/local/sbin/vpnkit-ru-domains.sh
+- /usr/local/sbin/vpnkit-ru-prune.py
+- /etc/dnsmasq.d/20-vpnkit-v2fly.conf
+- /etc/vpnkit/split.conf
 versions:
   dnsmasq: '>=2.87 (nftset)'
 health:

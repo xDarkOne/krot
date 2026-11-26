@@ -9,6 +9,7 @@ if [ "$VK_SIDE" = server ]; then
   say "проверка сервера каскада: awg0 слушает udp/$VK_PORT"
 else
   : "${VK_EXIT_IP:?}"
+  command -v ping >/dev/null || die "нет утилиты ping (пакет iputils-ping), проверка связности невозможна"
   ok=0
   for _ in $(seq 1 15); do
     hs=$(awg show awg0 latest-handshakes | awk '{print $2}')

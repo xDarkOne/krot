@@ -4,6 +4,10 @@
 : "${VK_SIDE:?}" "${VK_ADDR:?}" "${VK_TUN_NET:?}" "${VK_MTU:?}" "${VK_PORT:?}" "${VK_PRIVATE:?}" \
   "${VK_PEER_PUBLIC:?}" "${VK_PSK:?}" "${VK_HPK:?}" "${VK_OBFS:?}"
 command -v awg-quick >/dev/null || die "нет awg-quick — сначала модуль amneziawg"
+if [ "$VK_SIDE" = client ] && ! command -v ping >/dev/null; then
+  apt_install iputils-ping
+  command -v ping >/dev/null || die "утилита ping недоступна после установки iputils-ping"
+fi
 conf=/etc/amnezia/amneziawg/awg0.conf
 tunip=${VK_ADDR%/*}
 mkdir -p /etc/amnezia/amneziawg; chmod 700 /etc/amnezia/amneziawg

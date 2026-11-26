@@ -15,7 +15,9 @@ cat <<EOF | put "/etc/nginx/vpnkit.d/$VK_SUB_NAME-site-sub.conf" 644
 # vpnkit subscriptions. Токены не пишутся в журнал (P-50); чужой токен — обычный 404 витрины.
 location ^~ /u/ {
     access_log off;
+    if (\$uri !~ "^/u/[0-9a-f]{32}([.]vpnuri)?\$") { return 404; }
     alias $OUT/;
+    types { application/octet-stream vpnuri; }
     default_type text/plain;
     add_header Cache-Control "no-store" always;
     try_files \$uri =404;

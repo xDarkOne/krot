@@ -12,6 +12,8 @@
   add <имя>        новый клиент → JSON со ссылками
   del <имя>        удалить клиента (его подписка перестаёт отвечать)
   show <имя>       JSON со ссылками клиента
+  amnezia-publish <имя>   опубликовать профиль vpn:// из stdin
+  amnezia-unpublish <имя> убрать ссылку на профиль
   list             имена клиентов
   tg-add|tg-del|tg-show <имя>, tg-list   то же для пользователей MTProxy (telemt)
 MTProxy бывает двух видов (mtproxy.env, BACKEND): telemt, который ставит сам vpnkit, или
@@ -233,6 +235,11 @@ def subs(u, x, h, s):
             os.replace(path + ".new", path)
         os.chmod(path, 0o644)
         want.add(c["token"])
+        profile = c.get("amnezia")
+        if profile:
+            filename = profile["token"] + ".vpnuri"
+            write_if_changed(os.path.join(outdir, filename), profile["link"] + "\n", 0o640, group="www-data")
+            want.add(filename)
     # подписки удалённых клиентов не должны отвечать; в каталоге только наши файлы
     gone = 0
     for f in set(os.listdir(outdir)) - want:
@@ -534,6 +541,8 @@ def card(name, u):
     out = {"name": name, "links": links(name, c, u, x, h)}
     if s:
         out["sub_url"] = f"https://{s['SUB_NAME']}/u/{c['token']}"
+        if c.get("amnezia"):
+            out["amnezia_url"] = f"https://{s['SUB_NAME']}/u/{c['amnezia']['token']}.vpnuri"
         if s.get("ROUTING", "1") == "1":
             out["routing"] = {"happ": f"https://{s['SUB_NAME']}/h", "incy": f"https://{s['SUB_NAME']}/i"}
     return out
@@ -567,6 +576,33 @@ def tg_mtproxyl(cmd, a):
         print(json.dumps(mtproxyl_link(name), ensure_ascii=False))
 
 
+def remove_amnezia_file(profile, s):
+    if profile and s:
+        try:
+            os.unlink(os.path.join(s["OUTDIR"], profile["token"] + ".vpnuri"))
+        except FileNotFoundError:
+            pass
+
+
+def publish_amnezia(cmd, name, u):
+    s = env("sub")
+    if not s:
+        sys.exit("нет модуля subscriptions")
+    c = u["clients"][name]
+    if cmd == "amnezia-publish":
+        link = sys.stdin.read(16385).strip()
+        if not re.fullmatch(r"vpn://[A-Za-z0-9_-]{1,16377}", link):
+            sys.exit("ожидалась ссылка AmneziaVPN vpn://")
+        token = c.get("amnezia", {}).get("token") or secrets.token_hex(16)
+        c["amnezia"] = {"token": token, "link": link}
+        save_users(u)
+        subs(u, env("xray"), env("hy2"), s)
+    else:
+        remove_amnezia_file(c.pop("amnezia", None), s)
+        save_users(u)
+    print(json.dumps(card(name, u), ensure_ascii=False))
+
+
 def main():
     a = sys.argv[1:]
     if not a or a[0] in ("-h", "--help"):
@@ -592,7 +628,8 @@ def main():
             if not n.startswith("_"):
                 print(n)
         return
-    if len(a) != 2 or cmd not in ("add", "del", "show"):
+    commands = ("add", "del", "show") if tg else ("add", "del", "show", "amnezia-publish", "amnezia-unpublish")
+    if len(a) != 2 or cmd not in commands:
         sys.exit("использование: vpnkit-gen.py build | [tg-]list | [tg-]add|del|show <имя>")
     name = a[1]
     if not NAME_RE.match(name) or name.startswith("_"):
@@ -610,9 +647,15 @@ def main():
         save_users(u)
         build(quiet=True)
         print(json.dumps(tg_link(name, u, m) if tg else card(name, u), ensure_ascii=False))
+    elif cmd.startswith("amnezia-"):
+        if name not in u[reg]:
+            sys.exit(f"клиента {name} нет")
+        publish_amnezia(cmd, name, u)
     elif cmd == "del":
         if name not in u[reg]:
             sys.exit(f"клиента {name} нет")
+        if not tg:
+            remove_amnezia_file(u[reg][name].get("amnezia"), env("sub"))
         del u[reg][name]
         save_users(u)
         build(quiet=True)
@@ -624,4 +667,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import fcntl
+
+    # Таймер и команды управления используют один реестр и каталог подписок.
+    os.makedirs(ETC, mode=0o700, exist_ok=True)
+    with open(ETC + "/.gen.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        main()

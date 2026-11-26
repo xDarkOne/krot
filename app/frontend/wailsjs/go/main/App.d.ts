@@ -9,6 +9,8 @@ import {reach} from '../models';
 
 export function AddClient(arg1:string,arg2:string,arg3:string):Promise<main.CardView>;
 
+export function PublishSubAmnezia(arg1:string,arg2:string,arg3:boolean):Promise<main.CardView>;
+
 export function AlertsApply():Promise<Array<string>>;
 
 export function AlertsCheck(arg1:string):Promise<main.AlertsBot>;

@@ -67,6 +67,7 @@ const usage = `krot (Крот) — развёртывание и обслужи�
   clients add <узел> <имя> [--iface awg2]  новый клиент: профиль, ссылка vpn://, QR
   clients show|del <узел> <имя> | clients list <узел>  (AWG; del — без перезапуска входа)
   clients add|show|del <узел> <имя> --sub  клиент подписки (hysteria2, XHTTP, PQ): ссылка и QR
+  clients amnezia-publish|amnezia-unpublish <узел> <имя> --sub  профиль одноимённого клиента AmneziaWG
   clients list <узел> --sub
   clients add|show|del <узел> <имя> --tg   пользователь Telegram-прокси (MTProxy): ссылка и QR
   clients list <узел> --tg
@@ -806,7 +807,7 @@ func clientsCmd(ctx context.Context, invPath string, args []string) {
 		die("%v", err)
 	}
 	if sub {
-		subClientsCmd(ctx, n, rest)
+		subClientsCmd(ctx, n, rest, sec)
 		return
 	}
 	if tg {
@@ -889,7 +890,7 @@ func tgClientsCmd(ctx context.Context, n *inventory.Node, rest []string) {
 }
 
 // subClientsCmd — клиенты подписки (xray/hysteria2): реестр на узле, файлы — на пульте.
-func subClientsCmd(ctx context.Context, n *inventory.Node, rest []string) {
+func subClientsCmd(ctx context.Context, n *inventory.Node, rest []string, sec *secrets.Store) {
 	if rest[0] == "list" {
 		ns, err := clients.SubNames(ctx, n)
 		if err != nil {
@@ -910,6 +911,8 @@ func subClientsCmd(ctx context.Context, n *inventory.Node, rest []string) {
 		c, err = clients.SubAdd(ctx, n, rest[2])
 	case "show":
 		c, err = clients.SubShow(ctx, n, rest[2])
+	case "amnezia-publish", "amnezia-unpublish":
+		c, err = clients.SubAmnezia(ctx, n, rest[2], rest[0] == "amnezia-publish", sec)
 	case "del":
 		if err = clients.SubDel(ctx, n, rest[2]); err == nil {
 			clients.RemoveFiles(n.Name, "sub", rest[2])
@@ -917,7 +920,7 @@ func subClientsCmd(ctx context.Context, n *inventory.Node, rest []string) {
 			return
 		}
 	default:
-		die("clients add|show|del|list --sub")
+		die("clients add|show|del|list|amnezia-publish|amnezia-unpublish --sub")
 	}
 	if err != nil {
 		die("%v", err)
@@ -941,6 +944,9 @@ func printCard(c clients.Card) {
 		fmt.Printf("    профиль: %s.conf, ссылка: %s.vpn.txt, QR: %s.qr.png\n", c.Base, c.Base, c.Base)
 	case "sub":
 		fmt.Printf("    подписка: %s\n    файл: %s.sub.txt, QR: %s.sub.qr.png\n", c.QR, c.Base, c.Base)
+		if c.AmneziaURL != "" {
+			fmt.Printf("    профиль AmneziaVPN: %s\n", c.AmneziaURL)
+		}
 	case "tg":
 		fmt.Printf("    файл: %s.tg.txt, QR: %s.tg.qr.png\n", c.Base, c.Base)
 	}

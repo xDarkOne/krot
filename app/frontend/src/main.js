@@ -2,7 +2,7 @@
 // имена клиентов и тексты проверок приходят по сети.
 import {
     GetState, PickInventory, Unlock, Status, Clients,
-    AddClient, ShowClient, DelClient, OpenClientsFolder,
+    AddClient, ShowClient, DelClient, OpenClientsFolder, PublishSubAmnezia,
     Modules, Install, Answer, Backups, PullBackup, RestoreClients,
 } from '../wailsjs/go/main/App';
 import {EventsOn} from '../wailsjs/runtime/runtime';
@@ -403,6 +403,24 @@ function showCard(card, fresh) {
         await navigator.clipboard.writeText(card.body);
         toast('Текст скопирован');
     }}, 'Копировать всё');
+    const amnezia = card.kind === 'sub' ? el('button', {class: 'ghost'},
+        card.amnezia_url ? 'Отозвать ссылку AmneziaVPN' : 'Опубликовать профиль AmneziaVPN') : null;
+    if (amnezia) {
+        amnezia.addEventListener('click', async () => {
+            const publish = !card.amnezia_url;
+            amnezia.disabled = true;
+            try {
+                showCard(await PublishSubAmnezia(card.node, card.name, publish), false);
+            } catch (e) {
+                toast(errText(e), true);
+                amnezia.disabled = false;
+            }
+        });
+    }
+    const copyAmnezia = card.amnezia_url ? el('button', {class: 'ghost', onclick: async () => {
+        await navigator.clipboard.writeText(card.amnezia_url);
+        toast('Ссылка AmneziaVPN скопирована');
+    }}, 'Копировать ссылку AmneziaVPN') : null;
     const del = el('button', {class: 'danger'}, 'Удалить клиента');
     let armed = false;
     del.addEventListener('click', async () => {
@@ -431,6 +449,9 @@ function showCard(card, fresh) {
             el('p', {}, card.hint),
             el('pre', {}, card.body),
             el('div', {class: 'row'}, copy, copyAll, el('button', {class: 'ghost', onclick: () => OpenClientsFolder(card.node)}, 'Папка с файлами')),
+            card.kind === 'sub' ? el('div', {},
+                el('div', {class: 'row'}, amnezia, copyAmnezia),
+                el('div', {class: 'muted'}, 'Публикуется одноимённый профиль AmneziaWG. Один профиль на устройство.')) : null,
             el('div', {class: 'warnline'}, 'Ссылка и QR — пропуск. Передавайте только самому человеку.'),
             el('div', {class: 'row', style: 'margin-top:18px'}, del))));
     $('modal').hidden = false;

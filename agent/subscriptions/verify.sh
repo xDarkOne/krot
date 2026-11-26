@@ -8,6 +8,11 @@ for t in $(python3 -c 'import json;[print(c["token"]) for c in json.load(open("/
   [ "$k" -ge 2 ] || die "подписка …${t: -4} отдаёт $k ссылок"
   n=$((n+1))
 done
+for t in $(python3 -c 'import json;[print(c["amnezia"]["token"]) for c in json.load(open("/etc/vpnkit/users.json"))["clients"].values() if c.get("amnezia")]'); do
+  profile=$(curl -fsS -m 10 --resolve "$VK_SUB_NAME:$port:127.0.0.1" "https://$VK_SUB_NAME/u/$t.vpnuri") \
+    || die "профиль AmneziaVPN недоступен"
+  case "$profile" in vpn://?*) ;; *) die "неверный ответ для профиля AmneziaVPN" ;; esac
+done
 c=$(curl -s -m 10 -o /dev/null -w '%{http_code}' --resolve "$VK_SUB_NAME:$port:127.0.0.1" "https://$VK_SUB_NAME/u/$(head -c16 /dev/urandom | xxd -p)")
 [ "$c" = 404 ] || die "чужой токен отвечает $c, а не 404"
 r=""

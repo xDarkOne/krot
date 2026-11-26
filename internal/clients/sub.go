@@ -9,13 +9,15 @@ import (
 
 	"github.com/xDarkOne/krot/internal/inventory"
 	"github.com/xDarkOne/krot/internal/remote"
+	"github.com/xDarkOne/krot/internal/secrets"
 )
 
 // SubCard — клиент подписки: персональная ссылка на подписку и ссылки на входы.
 type SubCard struct {
-	Name   string   `json:"name"`
-	SubURL string   `json:"sub_url"`
-	Links  []string `json:"links"`
+	Name       string   `json:"name"`
+	SubURL     string   `json:"sub_url"`
+	Links      []string `json:"links"`
+	AmneziaURL string   `json:"amnezia_url"`
 	// Routing — ссылки на правила маршрутизации для приложений: "happ", "incy" → https://…/h, /i
 	Routing map[string]string `json:"routing"`
 }
@@ -25,12 +27,16 @@ var subName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,32}$`)
 // gen запускает vpnkit-gen.py на узле. Реестр клиентов подписки живёт на узле
 // (/etc/vpnkit/users.json) и попадает в его резервные копии.
 func gen(ctx context.Context, n *inventory.Node, args ...string) (string, error) {
+	return genWithInput(ctx, n, "", args...)
+}
+
+func genWithInput(ctx context.Context, n *inventory.Node, input string, args ...string) (string, error) {
 	cl, err := remote.Dial(n)
 	if err != nil {
 		return "", err
 	}
 	defer cl.Close()
-	r, err := cl.Run(ctx, "/usr/local/sbin/vpnkit-gen.py "+strings.Join(args, " ")+"\n")
+	r, err := cl.RunStdin(ctx, "/usr/local/sbin/vpnkit-gen.py "+strings.Join(args, " ")+"\n", input)
 	if err != nil {
 		return "", err
 	}
@@ -42,6 +48,26 @@ func gen(ctx context.Context, n *inventory.Node, args ...string) (string, error)
 		return "", fmt.Errorf("%s", msg)
 	}
 	return r.Stdout, nil
+}
+
+// SubAmnezia публикует профиль одноимённого клиента AWG или отзывает его ссылку.
+func SubAmnezia(ctx context.Context, n *inventory.Node, name string, publish bool, sec *secrets.Store) (SubCard, error) {
+	if !nameRe.MatchString(name) || strings.HasPrefix(name, "_") {
+		return SubCard{}, fmt.Errorf("имя: латиница, цифры, _ и -, до 32 знаков, не с «_»")
+	}
+	cmd, input := "amnezia-unpublish", ""
+	if publish {
+		p, err := Show(n, "", name, sec)
+		if err != nil {
+			return SubCard{}, fmt.Errorf("сначала добавьте клиента AmneziaWG с тем же именем: %w", err)
+		}
+		cmd, input = "amnezia-publish", p.Link+"\n"
+	}
+	out, err := genWithInput(ctx, n, input, cmd, name)
+	if err != nil {
+		return SubCard{}, err
+	}
+	return subCard(out)
 }
 
 func subCard(out string) (SubCard, error) {

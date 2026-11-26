@@ -14,15 +14,16 @@ import (
 // Card — то, что получает человек: текст файла, содержимое QR и подсказка, чем открыть.
 // Одна карточка и для пульта (файлы в ~/.krot/clients/<узел>/), и для приложения (экран).
 type Card struct {
-	Kind  string `json:"kind"` // awg | sub | tg
-	Node  string `json:"node"`
-	Name  string `json:"name"`
-	Title string `json:"title"` // что это, по-человечески
-	QR    string `json:"qr"`    // что зашито в QR
-	Body  string `json:"body"`  // текст файла: ссылки с пояснениями
-	Hint  string `json:"hint"`  // чем открыть
-	Extra string `json:"extra"` // доп. файл (профиль .conf для AWG), может быть пустым
-	Base  string `json:"base"`  // путь к файлам без расширения (после Save)
+	Kind       string `json:"kind"` // awg | sub | tg
+	Node       string `json:"node"`
+	Name       string `json:"name"`
+	Title      string `json:"title"` // что это, по-человечески
+	QR         string `json:"qr"`    // что зашито в QR
+	Body       string `json:"body"`  // текст файла: ссылки с пояснениями
+	Hint       string `json:"hint"`  // чем открыть
+	Extra      string `json:"extra"` // доп. файл (профиль .conf для AWG), может быть пустым
+	Base       string `json:"base"`  // путь к файлам без расширения (после Save)
+	AmneziaURL string `json:"amnezia_url,omitempty"`
 }
 
 // Kinds — расширения файлов карточки по виду клиента.
@@ -50,12 +51,15 @@ func SubCardOf(node string, c SubCard) Card {
 		body += "\n# правила «российское — напрямую» (открыть на телефоне, приложение добавит их само)\n" +
 			"# Happ: " + c.Routing["happ"] + "\n# INCY: " + c.Routing["incy"] + "\n"
 	}
+	if c.AmneziaURL != "" {
+		body += "\n# AmneziaVPN 5.0.2+: скачайте .vpnuri и вставьте его содержимое (vpn://) в приложение. Один профиль на устройство.\n" + c.AmneziaURL + "\n"
+	}
 	qr := c.SubURL
 	if qr == "" && len(c.Links) > 0 { // подписка не включена — в QR первая ссылка
 		qr = c.Links[0]
 	}
 	return Card{Kind: "sub", Node: node, Name: c.Name, Title: "Подписка · входов " + strconv.Itoa(len(c.Links)),
-		QR: qr, Body: body, Hint: "Happ, v2rayNG, Hiddify, Streisand: «добавить подписку» — QR или ссылка"}
+		QR: qr, Body: body, AmneziaURL: c.AmneziaURL, Hint: "Happ, v2rayNG, Hiddify, Streisand: «добавить подписку» — QR или ссылка"}
 }
 
 // TGCardOf — карточка пользователя Telegram-прокси.

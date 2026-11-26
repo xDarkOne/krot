@@ -343,6 +343,10 @@ func (a *App) card(node, kind, name string, add bool) (CardView, error) {
 	default:
 		return CardView{}, fmt.Errorf("неизвестный вид клиента %q", kind)
 	}
+	return saveCard(c)
+}
+
+func saveCard(c clients.Card) (CardView, error) {
 	if err := c.Save(); err != nil {
 		return CardView{}, fmt.Errorf("файлы на компьютере не сохранены: %w", err)
 	}
@@ -361,6 +365,26 @@ func (a *App) AddClient(node, kind, name string) (CardView, error) {
 // ShowClient — карточка существующего клиента.
 func (a *App) ShowClient(node, kind, name string) (CardView, error) {
 	return a.card(node, kind, name, false)
+}
+
+// PublishSubAmnezia добавляет или отзывает ссылку на профиль в карточке подписки.
+func (a *App) PublishSubAmnezia(node, name string, publish bool) (CardView, error) {
+	n, err := a.node(node)
+	if err != nil {
+		return CardView{}, err
+	}
+	var sec *secrets.Store
+	if publish {
+		sec, err = a.vault()
+		if err != nil {
+			return CardView{}, err
+		}
+	}
+	sub, err := clients.SubAmnezia(a.ctx, n, name, publish, sec)
+	if err != nil {
+		return CardView{}, err
+	}
+	return saveCard(clients.SubCardOf(node, sub))
 }
 
 // DelClient — удалить клиента: доступ пропадает сразу, у остальных ничего не рвётся.

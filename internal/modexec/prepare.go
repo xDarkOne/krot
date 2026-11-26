@@ -47,7 +47,7 @@ func Prepare(inv *inventory.Inventory, n *inventory.Node, module string, sec *se
 	case "relocate":
 		return prepareRelocate(inv, n, p)
 	case "traffic-guard":
-		return prepareTrafficGuard(inv, p)
+		return prepareTrafficGuard(inv, n, p)
 	case "monitoring":
 		return prepareMonitoring(inv, n, p, sec)
 	}
@@ -323,7 +323,7 @@ func prepareRelocate(inv *inventory.Inventory, n *inventory.Node, p map[string]s
 
 // prepareTrafficGuard — адреса всех узлов (для исключений): после клонирования или переезда
 // узлы не должны блокировать друг друга.
-func prepareTrafficGuard(inv *inventory.Inventory, p map[string]string) (map[string]string, error) {
+func prepareTrafficGuard(inv *inventory.Inventory, n *inventory.Node, p map[string]string) (map[string]string, error) {
 	var hosts []string
 	for _, x := range inv.Nodes {
 		if net.ParseIP(x.Host) != nil {
@@ -332,6 +332,7 @@ func prepareTrafficGuard(inv *inventory.Inventory, p map[string]string) (map[str
 	}
 	sort.Strings(hosts)
 	p["NODES"] = strings.Join(hosts, " ")
+	p["EXEMPT"] = strings.Join(names(n.Modules["traffic-guard"]["exempt"]), " ")
 	return p, nil
 }
 

@@ -16,8 +16,11 @@ else
     sleep 2
   done
   [ $ok = 1 ] || die "нет рукопожатия с exit за 30 с (порт закрыт у хостера? параметры не совпали?)"
-  ping -c3 -W2 -q "$VK_PEER_TUN" >/dev/null || die "рукопожатие есть, но $VK_PEER_TUN не пингуется"
-  ip=$(curl -s -m10 --interface awg0 https://api.ipify.org) || true
-  [ "$ip" = "$VK_EXIT_IP" ] || die "выход через awg0 не на exit (получено: ${ip:-нет ответа}, ждали $VK_EXIT_IP)"
-  say "проверка клиента каскада: рукопожатие есть, ping $VK_PEER_TUN, выход через awg0 = $ip"
+  ping -I awg0 -c3 -W2 -q "$VK_PEER_TUN" >/dev/null || die "рукопожатие есть, но $VK_PEER_TUN не пингуется"
+  say "проверка клиента каскада: рукопожатие есть, ping $VK_PEER_TUN через awg0 прошёл"
+  if ip=$(curl -4fsS -m10 --noproxy '*' --interface awg0 https://api.ipify.org) && [ "$ip" = "$VK_EXIT_IP" ]; then
+    say "выход через awg0 = $ip"
+  else
+    say "ВНИМАНИЕ: публичный выход не подтверждён (получено: ${ip:-нет ответа}, ждали $VK_EXIT_IP). Проверьте NAT, forwarding и доступность api.ipify.org на exit."
+  fi
 fi

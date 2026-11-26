@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"net"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/xDarkOne/krot/agent"
@@ -131,14 +132,22 @@ func prepareCascade(inv *inventory.Inventory, n *inventory.Node, p map[string]st
 	if err != nil {
 		return nil, err
 	}
-	port, err := ensure(sec, ns+"port", func() (string, error) {
-		if v, ok := cfg["port"]; ok {
-			return fmt.Sprint(v), nil
+	previous, saved := sec.Get(ns + "port")
+	port := previous
+	if v, configured := cfg["port"]; configured {
+		num, err := strconv.ParseUint(fmt.Sprint(v), 10, 16)
+		if err != nil || num == 0 {
+			return nil, fmt.Errorf("cascade-awg0 port %v: нужен UDP-порт 1–65535", v)
 		}
-		return fmt.Sprint(20000 + int(randInt(40000))), nil
-	}, &changed)
-	if err != nil {
-		return nil, err
+		port = strconv.FormatUint(num, 10)
+	} else if !saved {
+		port = fmt.Sprint(20000 + int(randInt(40000)))
+	}
+	if !saved || previous != port {
+		if err := sec.Set(ns+"port", port); err != nil {
+			return nil, err
+		}
+		changed = true
 	}
 	obfsJSON, err := ensure(sec, ns+"obfs", func() (string, error) {
 		b, e := json.Marshal(awgkeys.NewObfs())

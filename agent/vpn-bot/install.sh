@@ -1,7 +1,7 @@
 # vpn-bot (entry/solo): Telegram-бот администратора — состояние узла, клиенты подписки, трафик.
 # Использует токен и получателей оповещений (/etc/vpnkit/alert.env). Описание — docs/20-server-modules/vpn-bot.md
 for f in vpn-bot.py vpn-stats.py; do [ -s "$VK_RUN/src/$f" ] || die "нет файла $f от пульта"; done
-apt_install python3 curl
+apt_install python3 python3-pil fonts-dejavu-core curl
 put /usr/local/sbin/vpn-bot.py 755 < "$VK_RUN/src/vpn-bot.py"
 put /usr/local/sbin/vpn-stats.py 755 < "$VK_RUN/src/vpn-stats.py"
 mkdir -p /var/lib/vpnkit

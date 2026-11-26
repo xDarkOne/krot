@@ -161,6 +161,9 @@ def xray_config(u, x):
               "streamSettings": {"sockopt": {"mark": 4}}}
     return {
         "log": {"loglevel": "warning"},
+        "api": {"tag": "krot-stats", "listen": "127.0.0.1:10085", "services": ["StatsService"]},
+        "stats": {},
+        "policy": {"system": {"statsInboundUplink": True, "statsInboundDownlink": True}},
         # dnsmasq узла уже делит DNS (российские зоны → российский резолвер) — одна правда с AWG
         "dns": {"servers": ["127.0.0.1"] if dnsmasq else ["1.1.1.1", "8.8.8.8"], "queryStrategy": "UseIPv4"},
         "inbounds": [

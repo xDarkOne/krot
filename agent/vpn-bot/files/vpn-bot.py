@@ -33,6 +33,12 @@ NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,32}$")
 UNITS = ["xray", "hysteria2", "sing-box", "nginx", "dnsmasq", "warp-ru", "telemt", "mtproxyl",
          "traffic-guard.timer", "vpnkit-watch.timer", "vpnkit-backup.timer"]
 PERIODS = {1: "Сутки", 7: "Неделя", 30: "Месяц"}
+PROTOCOLS = {
+    "awg": ("AmneziaWG", "#5699f5"),
+    "xhttp": ("VLESS XHTTP", "#46c6a4"),
+    "pq": ("VLESS PQ", "#f1ad49"),
+    "hy2": ("Hysteria2", "#e66a9e"),
+}
 
 
 def load_env():
@@ -139,17 +145,23 @@ def traffic(days, now=None):
         labels = [day.strftime("%d.%m") for day in dates]
         cutoff = int(datetime.datetime.combine(dates[0], datetime.time()).timestamp())
         bucket = "date(ts, 'unixepoch', 'localtime')"
-    bins = {key: [0, 0] for key in keys}
+    bins = {key: defaultdict(int) for key in keys}
     peers = defaultdict(lambda: [0, 0])
     if os.path.isfile(STATS_DB):
         with closing(sqlite3.connect(f"file:{STATS_DB}?mode=ro", uri=True)) as db:
             rows = db.execute(f"SELECT {bucket}, peer, SUM(rx), SUM(tx) FROM traffic "
                               "WHERE ts BETWEEN ? AND ? GROUP BY 1, peer", (cutoff, int(now)))
             for key, peer, rx, tx in rows:
-                bins[key][0] += rx
-                bins[key][1] += tx
+                bins[key]["awg"] += rx + tx
                 peers[peer][0] += rx
                 peers[peer][1] += tx
+            # После обновления бот может открыть старую базу до первого запуска сборщика.
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='protocol_traffic'").fetchone():
+                rows = db.execute(f"SELECT {bucket}, protocol, SUM(rx + tx) FROM protocol_traffic "
+                                  "WHERE ts BETWEEN ? AND ? GROUP BY 1, protocol", (cutoff, int(now)))
+                for key, protocol, total in rows:
+                    if protocol in PROTOCOLS and protocol != "awg":
+                        bins[key][protocol] += total
     return labels, list(bins.values()), peers
 
 
@@ -168,10 +180,10 @@ def stats_text(days):
 
 
 def traffic_card(days, labels, bins, active, registered):
-    image = Image.new("RGB", (760, 636), "#16212b")
+    image = Image.new("RGB", (760, 654), "#16212b")
     draw = ImageDraw.Draw(image)
     white, muted, panel = "#f0f5fa", "#a2b4c6", "#22313f"
-    down, up, selected = "#5699f5", "#46c6a4", "#356a9e"
+    selected = "#356a9e"
 
     def text(x, y, value, size, color=white, bold=False, anchor="lt"):
         suffix = "-Bold" if bold else ""
@@ -181,7 +193,7 @@ def traffic_card(days, labels, bins, active, registered):
     def box(x, y, width, height, color=panel, radius=18):
         draw.rounded_rectangle((x, y, x + width, y + height), radius, fill=color)
 
-    rx, tx = (sum(values[index] for values in bins) for index in (0, 1))
+    totals = {protocol: sum(values.get(protocol, 0) for values in bins) for protocol in PROTOCOLS}
     text(28, 28, "Крот · Трафик", 36, bold=True)
     for index, (period, label) in enumerate(PERIODS.items()):
         x = 28 + 238 * index
@@ -189,40 +201,41 @@ def traffic_card(days, labels, bins, active, registered):
         text(x + 114, 110, label, 23, anchor="mm")
     box(28, 154, 345, 103)
     box(387, 154, 345, 103)
-    text(48, 174, fmt_bytes(rx + tx), 37, bold=True)
+    text(48, 174, fmt_bytes(sum(totals.values())), 37, bold=True)
     text(48, 223, "Трафик за период", 20, muted)
     text(407, 174, f"{active} из {registered}", 37, bold=True)
-    text(407, 223, "Профили с трафиком", 20, muted)
+    text(407, 223, "Профили AWG с трафиком", 20, muted)
     text(28, 287, "ТРАФИК ПО ЧАСАМ" if days == 1 else "ТРАФИК ПО ДНЯМ", 21, muted, True)
     box(28, 325, 704, 225)
     left, right, baseline = 52, 708, 508
     step = (right - left) / len(bins)
-    peak = max(map(sum, bins), default=0)
+    peak = max((sum(values.values()) for values in bins), default=0)
     if peak:
         for y in (371, 438, baseline):
             draw.line((left, y, right, y), fill="#344451", width=1)
-        for index, (received, sent) in enumerate(bins):
-            if not received and not sent:
+        for index, values in enumerate(bins):
+            total = sum(values.values())
+            if not total:
                 continue
             width = min(58, step * 0.74)
             x = left + (index + 0.5) * step - width / 2
-            total = max(2, round((received + sent) * 153 / peak))
-            bottom = round(total * sent / (received + sent))
-            if bottom:
-                box(x, baseline - bottom, width, bottom, down, min(5, bottom // 2))
-            top = total - bottom
-            if top:
-                box(x, baseline - total, width, top, up, min(5, top // 2))
+            scale = max(2, round(total * 153 / peak)) / total
+            cumulative, bottom = 0, 0
+            for protocol, (_, color) in PROTOCOLS.items():
+                cumulative += values.get(protocol, 0)
+                top = round(cumulative * scale)
+                if top > bottom:
+                    box(x, baseline - top, width, top - bottom, color, min(5, (top - bottom) // 2))
+                bottom = top
     else:
         text(380, 421, "За этот период трафика нет", 24, muted, anchor="mm")
     for i in sorted({round(i * (len(labels) - 1) / 4) for i in range(5)}):
         x = max(58, min(702, left + (i + 0.5) * step))
         text(x, 524, labels[i], 16, muted, anchor="mt")
-    box(28, 575, 15, 15, down, 4)
-    text(55, 571, f"Клиентам  {fmt_bytes(tx)}", 21)
-    box(387, 575, 15, 15, up, 4)
-    text(414, 571, f"От клиентов  {fmt_bytes(rx)}", 21)
-    text(28, 609, "AmneziaWG", 16, muted)
+    for index, (protocol, (label, color)) in enumerate(PROTOCOLS.items()):
+        x, y = 28 + (index % 2) * 359, 575 + (index // 2) * 37
+        box(x, y, 15, 15, color, 4)
+        text(x + 27, y - 4, f"{label}  {fmt_bytes(totals[protocol])}", 21)
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
     return buffer.getvalue()
@@ -256,7 +269,7 @@ def menu(section=None, days=7):
     if section == "traffic":
         rows = [[button(label, f"st:{period}", "primary" if days == period else None)
                  for period, label in PERIODS.items()],
-                [button("↻ Обновить", f"st:{days}"), button("По профилям", f"sd:{days}")]]
+                [button("↻ Обновить", f"st:{days}"), button("Профили AWG", f"sd:{days}")]]
     return {"inline_keyboard": rows + [nav]}
 
 
@@ -286,8 +299,10 @@ def show_traffic(chat, days, message=None):
     except (sqlite3.Error, OSError):
         send(chat, "Не удалось загрузить статистику трафика.", menu("traffic", days))
         return
-    caption = (f"AmneziaWG · {PERIODS[days]}\n"
-               f"Трафик: {fmt_bytes(sum(map(sum, bins)))} · Профили с трафиком: {active} из {len(registered)}")
+    totals = {protocol: sum(values.get(protocol, 0) for values in bins) for protocol in PROTOCOLS}
+    caption = (f"Трафик · {PERIODS[days]}\n"
+               f"Всего: {fmt_bytes(sum(totals.values()))} · Профили AWG: {active} из {len(registered)}\n"
+               + "\n".join(f"{label}: {fmt_bytes(totals[key])}" for key, (label, _) in PROTOCOLS.items()))
     keyboard = menu("traffic", days)
     if message and message.get("photo"):
         try:

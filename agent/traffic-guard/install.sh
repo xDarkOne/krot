@@ -11,7 +11,7 @@ put /usr/local/sbin/traffic-guard 755 < "$VK_RUN/src/traffic-guard"
 {
   echo "# Адреса, которые traffic-guard не трогает никогда (дополнительно к частным сетям)."
   echo "# Файл пересоздаёт Крот; свои адреса добавляйте в inventory: modules.traffic-guard.exempt"
-  for a in $VK_NODES $VK_EXEMPT; do echo "$a"; done
+  for a in $VK_NODES ${VK_EXEMPT:-}; do echo "$a"; done
   # пульт: SSH_CONNECTION = «клиент порт сервер порт»; без этого можно запереть себя
   client=$(awk '{print $1}' <<<"${SSH_CONNECTION:-}")
   [ -n "$client" ] && echo "$client # пульт"

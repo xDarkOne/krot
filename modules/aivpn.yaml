@@ -1,0 +1,32 @@
+name: aivpn
+doc: docs/20-server-modules/aivpn.md
+roles: [entry]
+topology: [cascade]
+requires: [base-host, cascade-awg0, split-routing]
+conflicts: []
+resources: {ram_mb: 50, disk_mb: 32}
+params:
+- {name: port, type: port, default: 8443}
+secrets: [ключ сервера генерируется на узле]
+ports:
+- {proto: udp, port: '{port}', expose: true, purpose: AIVPN}
+nft: {}
+ip_rules: []
+units: [aivpn-server.service]
+files: [/etc/aivpn/server.json, /etc/aivpn/server.key]
+versions: {aivpn: v1.3.0}
+health:
+- {cmd: systemctl is-active aivpn-server, expect: active}
+steps:
+  preflight: agent/aivpn/preflight.sh
+  install: agent/aivpn/install.sh
+  verify: agent/aivpn/verify.sh
+  rollback: agent/aivpn/rollback.sh
+catalog:
+  group: access
+  order: 56
+  default: false
+  place: {cascade: [entry]}
+  title: AIVPN
+  what: Отдельный вход AIVPN и независимые ключи клиентов
+  why: Вход обслуживает штатные клиенты AIVPN.

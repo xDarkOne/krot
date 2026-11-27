@@ -26,13 +26,17 @@ MTProxyL (BACKEND=mtproxyl, вид по умолчанию) — тогда по�
 import base64
 import datetime
 import json
+import ipaddress
+import fcntl
 import os
 import re
 import secrets
 import subprocess
 import sys
 import uuid
+import tempfile
 import zlib
+from pathlib import Path
 from urllib.parse import quote
 
 ETC = "/etc/vpnkit"
@@ -122,7 +126,11 @@ def ru_lists():
     return nets, sorted(set(zones))
 
 
-def xray_config(u, x):
+def hy2_client_port(h):
+    return int(h["HY2_VLESS_PORT"]) if h and h.get("HY2_PER_CLIENT") == "1" else None
+
+
+def xray_config(u, x, h=None):
     cascade = x.get("CASCADE") == "1"
     clients = [{"id": c["uuid"], "email": n} for n, c in sorted(u["clients"].items())]
     nets, zones = ru_lists()
@@ -137,6 +145,14 @@ def xray_config(u, x):
     rules.append({"ip": ["127.0.0.1/32"], "port": 53, "outboundTag": "direct"})
     # клиентам нечего делать во внутренних сетях узла: панели, socks, соседние службы (P-17)
     rules.append({"ip": PRIVATE, "outboundTag": "block"})
+    socks_domains = x.get("EXIT_SOCKS_DOMAINS", "").split() if cascade else []
+    socks_outbound = []
+    if socks_domains:
+        rules.append({"domain": ["domain:" + domain for domain in socks_domains], "outboundTag": "exit-socks"})
+        socks_outbound.append({"tag": "exit-socks", "protocol": "socks", "settings": {"servers": [{
+            "address": x["EXIT_SOCKS_ADDR"], "port": int(x["EXIT_SOCKS_PORT"]),
+            "users": [{"user": "krot-socks", "pass": x["EXIT_SOCKS_PASSWORD"]}],
+        }]}})
     # модуль warp-ru: российское выходит через Cloudflare WARP (outbound с меткой 4), а сайты из
     # bypass-domains, не открывающиеся с адресов Cloudflare, — напрямую
     warp = cascade and os.path.exists(WARP_DIR + "/account.json")
@@ -159,11 +175,17 @@ def xray_config(u, x):
     out_direct = {"tag": "direct", "protocol": "freedom", "settings": {"domainStrategy": "UseIPv4"}}
     out_ru = {"tag": "ru-exit", "protocol": "freedom", "settings": {"domainStrategy": "UseIPv4"},
               "streamSettings": {"sockopt": {"mark": 4}}}
+    hy2_personal = hy2_client_port(h)
+    hy2_inbounds = [{
+        "tag": "hy2v-in", "protocol": "vless", "listen": "127.0.0.1", "port": hy2_personal,
+        "settings": {"clients": clients, "decryption": "none"}, "sniffing": SNIFFING,
+    }] if hy2_personal else []
     return {
         "log": {"loglevel": "warning"},
         "api": {"tag": "krot-stats", "listen": "127.0.0.1:10085", "services": ["StatsService"]},
         "stats": {},
-        "policy": {"system": {"statsInboundUplink": True, "statsInboundDownlink": True}},
+        "policy": {"system": {"statsInboundUplink": True, "statsInboundDownlink": True},
+                   "levels": {"0": {"statsUserUplink": True, "statsUserDownlink": True}}},
         # dnsmasq узла уже делит DNS (российские зоны → российский резолвер) — одна правда с AWG
         "dns": {"servers": ["127.0.0.1"] if dnsmasq else ["1.1.1.1", "8.8.8.8"], "queryStrategy": "UseIPv4"},
         "inbounds": [
@@ -178,10 +200,10 @@ def xray_config(u, x):
             # петлевой SOCKS: сюда sing-box сдаёт hysteria2 — маршрутизация одна на всех
             {"tag": "hy2-in", "listen": "127.0.0.1", "port": int(x["SOCKS_PORT"]), "protocol": "socks",
              "settings": {"auth": "noauth", "udp": True}, "sniffing": SNIFFING},
-        ],
+        ] + hy2_inbounds,
         # первый outbound — по умолчанию: на entry всё не российское уходит в каскад
         "outbounds": ([out_cascade, out_direct] if cascade else [out_direct]) + ([out_ru] if warp else []) +
-                     [{"tag": "block", "protocol": "blackhole"}],
+                     socks_outbound + [{"tag": "block", "protocol": "blackhole"}],
         # AsIs: домены ловятся доменными правилами, адреса — адресными, без резолва на каждое соединение
         "routing": {"domainStrategy": "AsIs", "rules": rules},
     }
@@ -190,7 +212,17 @@ def xray_config(u, x):
 def singbox_config(u, x, h):
     name = h["TUNNEL_NAME"]
     live = f"/etc/letsencrypt/live/{name}"
-    return {
+    outbounds = [{"type": "socks", "tag": "to-xray", "server": "127.0.0.1",
+                  "server_port": int(x["SOCKS_PORT"]), "version": "5"}]
+    access = hy2_client_port(h)
+    rules = []
+    if access:
+        for name, client in sorted(u["clients"].items()):
+            tag = "hy2-user-" + name
+            outbounds.append({"type": "vless", "tag": tag, "server": "127.0.0.1",
+                              "server_port": access, "uuid": client["uuid"], "packet_encoding": "xudp"})
+            rules.append({"auth_user": [name], "outbound": tag})
+    config = {
         "log": {"level": "warn", "timestamp": True},
         "inbounds": [{
             "type": "hysteria2", "tag": "hy2-in", "listen": "::", "listen_port": int(h["HY2_PORT"]),
@@ -200,9 +232,11 @@ def singbox_config(u, x, h):
             "tls": {"enabled": True, "server_name": name,
                     "certificate_path": live + "/fullchain.pem", "key_path": live + "/privkey.pem"},
         }],
-        "outbounds": [{"type": "socks", "tag": "to-xray", "server": "127.0.0.1",
-                       "server_port": int(x["SOCKS_PORT"]), "version": "5"}],
+        "outbounds": outbounds,
     }
+    if access:
+        config["route"] = {"rules": rules, "final": "to-xray"}
+    return config
 
 
 def links(name, c, u, x, h):
@@ -248,6 +282,30 @@ def amnezia_share_link(name, profile):
     except (ValueError, TypeError, KeyError, AttributeError, zlib.error):
         pass
     return None
+
+
+def incy_import(url):
+    import_url = base64.urlsafe_b64encode(url.encode()).decode().rstrip("=")
+    return "incy://import/" + import_url
+
+
+def publish_incy_redirects(registry, sub):
+    links = []
+    for client in registry["clients"].values():
+        profile = client.get("amnezia") or {}
+        for token in {client["token"], profile.get("feed_token")} - {None}:
+            if re.fullmatch(r"[a-f0-9]{32}", token) and (Path(sub["OUTDIR"]) / token).is_file():
+                links.append((token, incy_import(f"https://{sub['SUB_NAME']}/u/{token}")))
+    directory = Path(sub["OUTDIR"]).parent / "go"
+    directory.mkdir(mode=0o755, parents=True, exist_ok=True)
+    os.chmod(directory, 0o755)
+    want = set()
+    for token, link in links:
+        write_if_changed(str(directory / token), link + "\n", 0o640, group="www-data")
+        want.add(token)
+    for file in directory.iterdir():
+        if re.fullmatch(r"[a-f0-9]{32}", file.name) and file.name not in want:
+            file.unlink()
 
 
 def subs(u, x, h, s):
@@ -297,6 +355,7 @@ def subs(u, x, h, s):
     for f in set(os.listdir(outdir)) - want:
         os.unlink(os.path.join(outdir, f))
         gone += 1
+    publish_incy_redirects(u, s)
     return len(u["clients"]), gone
 
 
@@ -566,7 +625,7 @@ def build(quiet=False):
             save_users(u)
         if "vlessenc" not in u:
             sys.exit(f"{USERS}: нет ключа vlessenc — переустановите модуль xray")
-        xc = write_if_changed(XRAY_CONF, json.dumps(xray_config(u, x), ensure_ascii=False, indent=1), 0o640,
+        xc = write_if_changed(XRAY_CONF, json.dumps(xray_config(u, x, h), ensure_ascii=False, indent=1), 0o640,
                               test=lambda p: [XRAY_BIN, "run", "-test", "-config", p], group="nogroup")
         msg.append(f"xray: {len(u['clients'])} клиентов{restart_if('xray', xc)}")
         if h:
@@ -601,6 +660,9 @@ def card(name, u):
             if feed_id and amnezia_share_link(name, profile) and os.path.isfile(os.path.join(s["OUTDIR"], feed_id)):
                 out["compat_url"] = out["sub_url"]
                 out["sub_url"] = prefix + feed_id
+        if os.path.isfile(f"{ETC}/panel.url"):
+            token = out["sub_url"].rsplit("/", 1)[1]
+            out["incy_url"] = f"https://{s['SUB_NAME']}/g/{token}/incy"
         if s.get("ROUTING", "1") == "1":
             out["routing"] = {"happ": f"https://{s['SUB_NAME']}/h", "incy": f"https://{s['SUB_NAME']}/i"}
     return out
@@ -642,6 +704,9 @@ def remove_amnezia_files(profile, s):
                     os.unlink(os.path.join(s["OUTDIR"], filename))
                 except FileNotFoundError:
                     pass
+        feed_id = profile.get("feed_token")
+        if feed_id and re.fullmatch(r"[a-f0-9]{32}", feed_id):
+            (Path(s["OUTDIR"]).parent / "go" / feed_id).unlink(missing_ok=True)
 
 
 def new_subscription():
@@ -649,14 +714,107 @@ def new_subscription():
             "hy2": secrets.token_urlsafe(16), "created": datetime.date.today().isoformat()}
 
 
-def add_amnezia(name, u):
+def local_awg_config():
+    values = env("client-awg")
+    if not values:
+        sys.exit("не установлен вход AmneziaWG 3.1")
+    iface = values["IFACE"]
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,14}", iface) or iface == "awg0":
+        sys.exit("неверный интерфейс AmneziaWG")
+    return values, Path(f"/etc/amnezia/amneziawg/{iface}.conf")
+
+
+def update_awg_file(path, data):
+    # Validate/apply the same file, preserving unrelated live peers without restarting.
+    write_if_changed(str(path), data, 0o600)
+    stripped = subprocess.run(["awg-quick", "strip", path.stem], capture_output=True, check=True)
+    with tempfile.NamedTemporaryFile(mode="wb") as temp:
+        temp.write(stripped.stdout)
+        temp.flush()
+        subprocess.run(["awg", "syncconf", path.stem, temp.name], capture_output=True, check=True)
+
+
+def local_awg_add(name):
+    values, path = local_awg_config()
+    with open(ETC + "/.client.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        original = path.read_text()
+        if re.search(r"(?m)^# name: " + re.escape(name) + r"$", original):
+            sys.exit("одноимённый профиль уже есть на входе AmneziaWG")
+        interface = original.split("[Peer]", 1)[0]
+        fields = dict((k.strip(), v.strip()) for line in interface.splitlines() if "=" in line
+                      for k, _, v in [line.partition("=")] if not k.lstrip().startswith("#"))
+        address = ipaddress.IPv4Interface(fields["Address"])
+        used = {ipaddress.IPv4Address(ip) for ip in re.findall(r"(?m)^AllowedIPs\s*=\s*(\d+\.\d+\.\d+\.\d+)/32", original)}
+        client_ip = next((ip for ip in address.network.hosts() if ip != address.ip and ip not in used), None)
+        if not client_ip:
+            sys.exit("на входе AmneziaWG закончились адреса")
+        private = subprocess.check_output(["awg", "genkey"], text=True).strip()
+        public = subprocess.check_output(["awg", "pubkey"], input=private + "\n", text=True).strip()
+        psk = subprocess.check_output(["awg", "genpsk"], text=True).strip()
+        server_public = subprocess.check_output(["awg", "pubkey"], input=fields["PrivateKey"] + "\n", text=True).strip()
+        # Only transport parameters are copied. Server commands and keys stay outside client profiles.
+        transport = {k: v for k, v in fields.items()
+                     if re.fullmatch(r"J(?:c|min|max)|[SH][1-4]|I[1-5]|HeaderProtectionKey|ContentPaddingAddition", k)}
+        endpoint = values["ENDPOINT"]
+        hostport = f"[{endpoint}]:{fields['ListenPort']}" if ":" in endpoint else f"{endpoint}:{fields['ListenPort']}"
+        config = "\n".join([
+            "[Interface]", f"Address = {client_ip}/32", f"DNS = {address.ip}",
+            f"MTU = {fields.get('MTU', '1260')}", f"PrivateKey = {private}",
+            *(f"{k} = {v}" for k, v in transport.items()), "", "[Peer]", f"PublicKey = {server_public}",
+            f"PresharedKey = {psk}", "AllowedIPs = 0.0.0.0/0, ::/0",
+            f"Endpoint = {hostport}", "PersistentKeepalive = 25", "",
+        ])
+        inner = dict(transport, allowed_ips=["0.0.0.0/0", "::/0"], clientId=public, client_ip=str(client_ip),
+                     client_priv_key=private, client_pub_key="", config=config, hostName=endpoint,
+                     mtu=fields.get("MTU", "1260"), persistent_keep_alive="25", port=int(fields["ListenPort"]),
+                     psk_key=psk, server_pub_key=server_public)
+        awg = dict(transport, last_config=json.dumps(inner), port=fields["ListenPort"], transport_proto="udp",
+                   subnet_address=str(address.network.network_address), protocol_version="3.1")
+        encoded = json.dumps({"containers": [{"awg": awg, "container": "amnezia-awg2"}],
+                              "defaultContainer": "amnezia-awg2", "description": name,
+                              "dns1": str(address.ip), "dns2": str(address.ip), "hostName": endpoint}).encode()
+        link = "vpn://" + base64.urlsafe_b64encode(len(encoded).to_bytes(4, "big") + zlib.compress(encoded)).decode().rstrip("=")
+        peer = f"# name: {name}\n[Peer]\nPublicKey = {public}\nPresharedKey = {psk}\nAllowedIPs = {client_ip}/32\n"
+        try:
+            update_awg_file(path, original.rstrip() + "\n\n" + peer)
+        except (OSError, subprocess.SubprocessError):
+            update_awg_file(path, original)
+            sys.exit("не удалось добавить пир AmneziaWG")
+        return link, public
+
+
+def local_awg_remove(name, public):
+    _, path = local_awg_config()
+    with open(ETC + "/.client.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        original = path.read_text()
+        pattern = (r"(?m)^# name: " + re.escape(name) + r"\n\[Peer\]\nPublicKey = " + re.escape(public) +
+                   r"\nPresharedKey = [^\n]*\nAllowedIPs = [^\n]*\n")
+        updated, count = re.subn(pattern, "", original, count=1)
+        if not count:
+            return
+        try:
+            update_awg_file(path, updated)
+        except (OSError, subprocess.SubprocessError):
+            update_awg_file(path, original)
+            sys.exit("не удалось удалить пир AmneziaWG")
+
+
+def add_amnezia(name, u, local=False):
     s = env("sub")
     if not s:
         sys.exit("нет модуля subscriptions")
-    link = sys.stdin.read(16385).strip()
-    if not amnezia_share_link(name, {"link": link}):
-        sys.exit("ожидалась ссылка vpn:// с профилем AmneziaWG от Крота")
     clients = u["clients"]
+    public = None
+    if local:
+        if name in clients:
+            sys.exit(f"клиент {name} уже есть")
+        link, public = local_awg_add(name)
+    else:
+        link = sys.stdin.read(16385).strip()
+        if not amnezia_share_link(name, {"link": link}):
+            sys.exit("ожидалась ссылка vpn:// с профилем AmneziaWG от Крота")
     if name in clients:
         # Повтор после обрыва SSH может вернуть карточку только для того же профиля.
         if clients[name].get("amnezia", {}).get("link") == link:
@@ -667,9 +825,11 @@ def add_amnezia(name, u):
 
     c = new_subscription()
     c["amnezia"] = {"token": secrets.token_hex(16), "link": link, "feed_token": secrets.token_hex(16)}
+    if public:
+        c["amnezia"]["local_public"] = public
     clients[name] = c
-    save_users(u)
     try:
+        save_users(u)
         build(quiet=True)
         result = card(name, u)
         if not result.get("compat_url"):
@@ -678,8 +838,10 @@ def add_amnezia(name, u):
     except (Exception, SystemExit):
         try:
             restored = load_users()
-            del restored["clients"][name]
+            restored["clients"].pop(name, None)
             save_users(restored)
+            if public:
+                local_awg_remove(name, public)
             remove_amnezia_files(c["amnezia"], s)
             try:
                 os.unlink(os.path.join(s["OUTDIR"], c["token"]))
@@ -701,11 +863,16 @@ def publish_amnezia(cmd, name, u):
         if not amnezia_share_link(name, {"link": link}):
             sys.exit("ожидалась ссылка vpn:// с профилем AmneziaWG от Крота")
         profile = c.setdefault("amnezia", {"token": secrets.token_hex(16)})
+        if profile.get("local_public"):
+            sys.exit("профиль управляется панелью: сначала отзовите его")
         profile["link"] = link
         save_users(u)
         subs(u, env("xray"), env("hy2"), s)
     else:
-        remove_amnezia_files(c.pop("amnezia", None), s)
+        profile = c.pop("amnezia", None)
+        if profile and profile.get("local_public"):
+            local_awg_remove(name, profile["local_public"])
+        remove_amnezia_files(profile, s)
         save_users(u)
     print(json.dumps(card(name, u), ensure_ascii=False))
 
@@ -758,10 +925,10 @@ def main():
         save_users(u)
         build(quiet=True)
         print(json.dumps(tg_link(name, u, m) if tg else card(name, u), ensure_ascii=False))
-    elif cmd == "add-amnezia":
+    elif cmd in ("add-amnezia", "add-local-awg"):
         if not re.fullmatch(r"[A-Za-z0-9-][A-Za-z0-9_-]{0,31}", name):
             sys.exit("имя AmneziaWG: латиница, цифры, _ и -, до 32 знаков, не с «_»")
-        print(json.dumps(add_amnezia(name, u), ensure_ascii=False))
+        print(json.dumps(add_amnezia(name, u, local=cmd == "add-local-awg"), ensure_ascii=False))
     elif cmd.startswith("amnezia-"):
         if name not in u[reg]:
             sys.exit(f"клиента {name} нет")
@@ -770,7 +937,10 @@ def main():
         if name not in u[reg]:
             sys.exit(f"клиента {name} нет")
         if not tg:
-            remove_amnezia_files(u[reg][name].get("amnezia"), env("sub"))
+            profile = u[reg][name].get("amnezia")
+            if profile and profile.get("local_public"):
+                local_awg_remove(name, profile["local_public"])
+            remove_amnezia_files(profile, env("sub"))
         del u[reg][name]
         save_users(u)
         build(quiet=True)
@@ -782,8 +952,6 @@ def main():
 
 
 if __name__ == "__main__":
-    import fcntl
-
     # Таймер и команды управления используют один реестр и каталог подписок.
     os.makedirs(ETC, mode=0o700, exist_ok=True)
     with open(ETC + "/.gen.lock", "a") as lock:

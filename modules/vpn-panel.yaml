@@ -1,0 +1,35 @@
+name: vpn-panel
+doc: docs/20-server-modules/vpn-panel.md
+roles: [entry, solo]
+requires: [subscriptions, vpn-bot]
+conflicts: []
+resources: {ram_mb: 35, disk_mb: 5}
+params: []
+secrets:
+- собственный токен Telegram-бота хранится в зашифрованном хранилище пульта
+ports: []
+nft: {}
+ip_rules: []
+units: [vpnkit-panel.service, vpnkit-panel-reminders.timer]
+files: [/etc/vpnkit/panel.url, /var/lib/vpnkit/panel.db]
+versions: {}
+health:
+- cmd: systemctl is-active vpnkit-panel.service
+  expect: active
+steps:
+  preflight: agent/vpn-panel/preflight.sh
+  install: agent/vpn-panel/install.sh
+  verify: agent/vpn-panel/verify.sh
+  rollback: agent/vpn-panel/rollback.sh
+  uninstall: agent/vpn-panel/uninstall.sh
+catalog:
+  group: extra
+  order: 140
+  default: false
+  domain: true
+  place:
+    cascade: [entry]
+    solo: [solo]
+  title: Веб-панель в Telegram
+  what: Подписки, устройства и напоминания об оплате в личном чате администратора
+  why: Для входа панель проверяет подпись Telegram и ID владельца.

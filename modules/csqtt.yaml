@@ -1,0 +1,33 @@
+name: csqtt
+doc: docs/20-server-modules/csqtt.md
+roles: [entry]
+topology: [cascade]
+requires: [base-host, cascade-awg0, split-routing]
+conflicts: []
+resources: {ram_mb: 50, disk_mb: 45}
+params:
+- {name: port, type: port, default: 46000}
+- {name: web_port, type: port, default: 46002}
+secrets: [пароли создаёт пульт и сохраняет в своём хранилище]
+ports:
+- {proto: udp, port: '{port}', expose: true, purpose: CSQTT}
+nft: {}
+ip_rules: []
+units: [csqtt.service]
+files: [/etc/csqtt/csqtt.env]
+versions: {csqtt: v2.5.0}
+health:
+- {cmd: systemctl is-active csqtt, expect: active}
+steps:
+  preflight: agent/csqtt/preflight.sh
+  install: agent/csqtt/install.sh
+  verify: agent/csqtt/verify.sh
+  rollback: agent/csqtt/rollback.sh
+catalog:
+  group: access
+  order: 57
+  default: false
+  place: {cascade: [entry]}
+  title: CSQTT
+  what: Отдельный вход и штатная панель CSQTT
+  why: Вход работает с совместимыми приложениями CSQTT.

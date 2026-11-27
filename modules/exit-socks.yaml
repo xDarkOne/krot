@@ -1,0 +1,32 @@
+name: exit-socks
+doc: docs/20-server-modules/exit-socks.md
+roles: [exit]
+topology: [cascade]
+requires: [cascade-awg0]
+conflicts: []
+resources: {ram_mb: 10, disk_mb: 5}
+params:
+- {name: port, type: port, default: 1080}
+secrets: [пароль SOCKS создаётся заново для владельца]
+ports:
+- {proto: tcp, port: '{port}', expose: false, purpose: SOCKS5 через awg0}
+nft: {}
+ip_rules: []
+units: [danted.service]
+files: [/etc/danted.conf]
+versions: {}
+health:
+- {cmd: systemctl is-active danted, expect: active}
+steps:
+  preflight: agent/exit-socks/preflight.sh
+  install: agent/exit-socks/install.sh
+  verify: agent/exit-socks/verify.sh
+  rollback: agent/exit-socks/rollback.sh
+catalog:
+  group: extra
+  order: 36
+  default: false
+  place: {cascade: [exit]}
+  title: SOCKS5 на выходе
+  what: Аутентифицированный Dante, доступный с входа через awg0
+  why: Отдельный выход для сервисов, которым нужен SOCKS5.

@@ -15,6 +15,8 @@ params:
 - name: hy2_port
   type: port
   default: 443
+- {name: per_client, type: bool, default: false, note: отдельный локальный VLESS в sing-box для каждого клиента}
+- {name: vless_port, type: port, default: 10802, note: внутренний порт VLESS в режиме per_client}
 secrets:
 - пароли hysteria2 клиентов — /etc/vpnkit/users.json на узле
 ports:

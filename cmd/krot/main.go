@@ -867,7 +867,11 @@ func clientsCmd(ctx context.Context, invPath string, args []string) {
 		if err := clients.Del(ctx, n, iface, rest[2], sec, func(s string) { fmt.Println("  •", s) }); err != nil {
 			die("%v", err)
 		}
-		clients.RemoveFiles(n.Name, "awg", rest[2])
+		name := rest[2]
+		if access := n.AccessForInterface(iface); access.Module != "client-awg" {
+			name += "-" + access.Iface
+		}
+		clients.RemoveFiles(n.Name, "awg", name)
 		fmt.Printf("  ✓ клиент %s удалён: его профиль и ссылка больше не работают\n", rest[2])
 	default:
 		die("clients add|show|del|list")

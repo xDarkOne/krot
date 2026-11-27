@@ -1,7 +1,7 @@
 # hysteria2: основной UDP-вход подписки (sing-box), трафик сдаётся в xray — маршрутизация общая.
 # Параметры: VK_SINGBOX_VERSION, VK_SINGBOX_SHA256_AMD64/ARM64 (пин), VK_TUNNEL_NAME, VK_HY2_PORT.
 # Описание — docs/20-server-modules/hysteria2.md
-: "${VK_SINGBOX_VERSION:?}" "${VK_SINGBOX_SHA256_AMD64:?}" "${VK_SINGBOX_SHA256_ARM64:?}" "${VK_TUNNEL_NAME:?}" "${VK_HY2_PORT:=443}"
+: "${VK_SINGBOX_VERSION:?}" "${VK_SINGBOX_SHA256_AMD64:?}" "${VK_SINGBOX_SHA256_ARM64:?}" "${VK_TUNNEL_NAME:?}" "${VK_HY2_PORT:=443}" "${VK_HY2_PER_CLIENT:=0}" "${VK_HY2_VLESS_PORT:=10802}"
 [ -s /etc/vpnkit/xray.env ] || die "нет модуля xray — hysteria2 сдаёт трафик в него"
 [ -f "/etc/letsencrypt/live/$VK_TUNNEL_NAME/fullchain.pem" ] || die "нет сертификата $VK_TUNNEL_NAME — сначала nginx-tls"
 l=$(ss -Hlunp "sport = :$VK_HY2_PORT")
@@ -34,7 +34,7 @@ cat <<'EOF' | put /etc/systemd/system/sing-box.service.d/10-vpnkit-single-config
 ExecStart=
 ExecStart=/usr/bin/sing-box -D /var/lib/sing-box -c /etc/sing-box/config.json run
 EOF
-printf '# vpnkit hysteria2. Пишет пульт.\nTUNNEL_NAME=%s\nHY2_PORT=%s\n' "$VK_TUNNEL_NAME" "$VK_HY2_PORT" | put /etc/vpnkit/hy2.env 600
+printf '# vpnkit hysteria2. Пишет пульт.\nTUNNEL_NAME=%s\nHY2_PORT=%s\nHY2_PER_CLIENT=%s\nHY2_VLESS_PORT=%s\n' "$VK_TUNNEL_NAME" "$VK_HY2_PORT" "$VK_HY2_PER_CLIENT" "$VK_HY2_VLESS_PORT" | put /etc/vpnkit/hy2.env 600
 cat <<EOF | put /etc/nftables.d/46-vpnkit-hy2.nft 644
 # vpnkit hysteria2
 table inet vpnkit_fw {

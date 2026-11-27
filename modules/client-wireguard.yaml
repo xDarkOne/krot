@@ -1,0 +1,30 @@
+name: client-wireguard
+doc: docs/20-server-modules/client-awg.md
+roles: [entry]
+topology: [cascade]
+requires: [base-host,cascade-awg0,split-routing]
+conflicts: []
+resources: {ram_mb: 5, disk_mb: 2}
+params:
+- {name: port, type: port, note: отдельный UDP-порт входа}
+secrets: [пульт создаёт ключ сервера и независимые клиентские профили]
+ports:
+- {proto: udp, port: '{port}', expose: true, purpose: WireGuard}
+nft: {}
+ip_rules: []
+units: []
+files: []
+versions: {}
+health: []
+steps:
+  install: agent/client-awg/install.sh
+  verify: agent/client-awg/verify.sh
+  rollback: agent/client-awg/rollback.sh
+catalog:
+  group: access
+  order: 52
+  default: false
+  place: {cascade: [entry]}
+  title: WireGuard
+  what: Отдельный клиентский вход wg2 с профилями в формате .conf
+  why: Подключение совместимых клиентов наряду с AWG 3.1.

@@ -12,9 +12,19 @@ nodes:
     role: entry
     ssh: {user: root, port: 22, auth: key, key: ~/.krot/keys/ru_ed25519}
     modules:
-      nginx-tls: {names: [es.example.org, ru.example.org], tunnel_name: es.example.org}
+      nginx-tls: {names: [es.example.org, ru.example.org, web.example.org], tunnel_name: es.example.org}
       subscriptions: {sub_name: ru.example.org}
-      mtproxy: {mask_name: ru.example.org}
+      mtproxy: {mask_name: ru.example.org, web_name: web.example.org}
+      # Для профиля «Полный каскад» раскомментируйте нужные строки:
+      # client-awg: {port: 51822}
+      # client-awg-legacy: {enabled: true, port: 51820}
+      # client-wireguard: {enabled: true, port: 51821}
+      # vk-turn-proxy: {enabled: true}
+      # aivpn: {enabled: true}
+      # csqtt: {enabled: true}
+      # hysteria2: {per_client: true}
+      # vpn-bot: {enabled: true}       # настройте своего бота через krot alerts set
+      # vpn-panel: {enabled: true}
   eu:                                    # выход: через него зарубежный трафик уходит в интернет
     host: 198.51.100.20
     role: exit
@@ -27,4 +37,5 @@ nodes:
         # exit_ipv6: "2001:db8::20"         # замените на глобальный IPv6 выхода или удалите строку
         reality_server_name: ""          # укажите имя доступного с exit внешнего TLS 1.3 / HTTP/2 сайта
         reality_port: 24443              # TCP для резерва, отдельно от веб-витрины на 443
+      # exit-socks: {enabled: true}
       nginx-tls: {names: [en.example.org]}   # витрина выхода (по желанию)

@@ -207,3 +207,38 @@ func TestCatalog(t *testing.T) {
 		}
 	}
 }
+
+func TestPortableCascadePlan(t *testing.T) {
+	topology := inv(true)
+	topology.ApplyPortableCascade()
+	steps, err := Plan(topology, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := todo(steps)
+	requiredOrder := [][2]string{
+		{"x:cascade-awg0", "x:exit-socks"},
+		{"e:client-wireguard", "e:vk-turn-proxy"},
+		{"e:split-routing", "e:csqtt"},
+		{"e:split-routing", "e:aivpn"},
+		{"e:hysteria2", "e:subscriptions"},
+		{"e:vpn-bot", "e:vpn-panel"},
+	}
+	for _, pair := range requiredOrder {
+		before, after := -1, -1
+		for i, step := range active {
+			if step == pair[0] {
+				before = i
+			}
+			if step == pair[1] {
+				after = i
+			}
+		}
+		if before < 0 || after <= before {
+			t.Fatalf("invalid order %v in %v", pair, active)
+		}
+	}
+	if topology.Nodes["e"].Modules["hysteria2"]["per_client"] != true {
+		t.Fatal("portable preset must use per-account Hysteria2")
+	}
+}

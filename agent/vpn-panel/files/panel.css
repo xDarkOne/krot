@@ -1,0 +1,22 @@
+:root {
+  color-scheme: light dark;
+  font: 16px system-ui, sans-serif;
+  color: var(--tg-theme-text-color, CanvasText);
+  background: var(--tg-theme-bg-color, Canvas);
+}
+body { margin: 0; }
+main { max-width: 42rem; margin: auto; padding: 1.25rem; }
+h1 { font-size: 1.45rem; }
+h2 { overflow-wrap: anywhere; }
+label { display: block; margin-bottom: .4rem; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+button, input {
+  font: inherit; padding: .6rem .8rem; border-radius: .45rem;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+}
+button { cursor: pointer; }
+#profiles { display: flex; gap: .45rem; flex-wrap: wrap; margin: 1rem 0; }
+a { color: var(--tg-theme-link-color, LinkText); }
+ul { padding-left: 1.25rem; }
+li { margin: .5rem 0; }
+section { border-top: 1px solid color-mix(in srgb, currentColor 28%, transparent); padding-bottom: 1rem; }

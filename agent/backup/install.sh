@@ -13,13 +13,13 @@ echo "$VK_RECIPIENT" | put /etc/vpnkit/backup.recipients 600
 paths="/etc/amnezia /etc/wireguard /etc/nftables.conf /etc/nftables.d /etc/dnsmasq.d /etc/systemd/system
 /etc/sysctl.d /etc/modules-load.d /etc/ssh/sshd_config.d /root/.ssh /etc/fail2ban/jail.d /etc/vpnkit /var/lib/vpnkit/modules
 /var/lib/vpnkit/ru-nets.txt /usr/local/sbin /usr/local/lib/vpnkit/cascade/watch /etc/letsencrypt /etc/nginx /usr/local/etc/xray /etc/xray /etc/sing-box
-/var/www /etc/network/interfaces /etc/warp-ru /var/lib/warp-ru /etc/traffic-guard.exempt $VK_EXTRA_PATHS"
+/var/www /etc/network/interfaces /etc/warp-ru /var/lib/warp-ru /etc/aivpn /var/lib/aivpn/masks /etc/csqtt /etc/traffic-guard.exempt $VK_EXTRA_PATHS"
 cat <<EOF | put /etc/vpnkit/backup.conf 600
 # vpnkit backup ($VK_NODE). Пишет пульт; описание полей — /usr/local/sbin/vpnkit-backup.sh
 NODE=$VK_NODE
 PATHS="$(echo $paths)"
-EXCLUDES="*__pycache__* *.log *.log.[0-9]* */venv"
-SQLITE="$VK_SQLITE"
+EXCLUDES="etc/csqtt/csqtt.db* *./etc/csqtt/csqtt.db* *__pycache__* *.log *.log.[0-9]* */venv"
+SQLITE="/etc/csqtt/csqtt.db /var/lib/vpnkit/panel.db $VK_SQLITE"
 KEEP=$VK_KEEP
 PEER=""
 EOF

@@ -25,6 +25,7 @@ type Card struct {
 	Base       string `json:"base"`  // путь к файлам без расширения (после Save)
 	AmneziaURL string `json:"amnezia_url,omitempty"`
 	CompatURL  string `json:"compat_url,omitempty"`
+	fileSuffix string
 }
 
 // Kinds — расширения файлов карточки по виду клиента.
@@ -39,6 +40,11 @@ func Dir(node string) string { return filepath.Join(remote.StateDir(), "clients"
 
 // AWGCard — карточка клиента AmneziaWG.
 func AWGCard(node string, p Profile) Card {
+	if p.Link == "" {
+		return Card{Kind: "awg", Node: node, Name: p.Name, Title: p.Interface + " · " + p.IP,
+			QR: p.Conf, Body: p.Conf, Extra: p.Conf, fileSuffix: "-" + p.Interface,
+			Hint: "Импортируйте файл .conf или QR в совместимом клиенте."}
+	}
 	return Card{Kind: "awg", Node: node, Name: p.Name, Title: "AmneziaWG · " + p.IP,
 		QR: p.Link, Body: p.Link + "\n", Extra: p.Conf,
 		Hint: "AmneziaVPN: отсканировать QR или вставить ссылку vpn://; AmneziaWG: импорт файла .conf"}
@@ -98,7 +104,7 @@ func (c *Card) Save() error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	c.Base = filepath.Join(dir, c.Name)
+	c.Base = filepath.Join(dir, c.Name+c.fileSuffix)
 	ext := kindExt[c.Kind]
 	png, err := c.QRPNG(768)
 	if err != nil {

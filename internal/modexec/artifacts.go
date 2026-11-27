@@ -22,6 +22,12 @@ type Artifact struct {
 // artifacts подготавливает пакеты резерва до начала изменений на сервере.
 // Вход может не иметь доступа к GitHub, поэтому загрузку делает пульт.
 func artifacts(ctx context.Context, cl *remote.Client, module string, params map[string]string) ([]Artifact, error) {
+	if module == "vk-turn-proxy" {
+		return vkTurnArtifact(ctx, cl)
+	}
+	if module == "aivpn" || module == "csqtt" {
+		return extraTransportArtifact(ctx, cl, module)
+	}
 	if module != "cascade-awg0" || params["REALITY_NAME"] == "" {
 		return nil, nil
 	}

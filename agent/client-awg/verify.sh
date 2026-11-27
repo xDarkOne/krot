@@ -1,8 +1,9 @@
 # client-awg: проверка входа (без клиента: интерфейс, порт, правила, DNS на шлюзе).
 : "${VK_IFACE:?}" "${VK_GW:?}" "${VK_PORT:?}" "${VK_RULE_MAIN:?}" "${VK_RULE_CASCADE:?}" "${VK_CASCADE:=1}"
 I=$VK_IFACE
-systemctl is-active -q "awg-quick@$I" || die "awg-quick@$I не запущен"
-[ "$(awg show "$I" listen-port)" = "$VK_PORT" ] || die "$I слушает не $VK_PORT"
+: "${VK_WG_TOOL:=awg}" "${VK_CONF_DIR:=/etc/amnezia/amneziawg}"
+systemctl is-active -q "${VK_WG_TOOL}-quick@$I" || die "${VK_WG_TOOL}-quick@$I не запущен"
+[ "$("$VK_WG_TOOL" show "$I" listen-port)" = "$VK_PORT" ] || die "$I слушает не $VK_PORT"
 grep -qF "$VK_GW/" <<<"$(ip -br addr show "$I")" || die "у $I нет адреса $VK_GW"
 if [ "$VK_CASCADE" = 1 ]; then
   r=$(ip rule)

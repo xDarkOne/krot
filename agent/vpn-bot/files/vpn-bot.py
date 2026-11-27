@@ -31,7 +31,8 @@ STATS_DB = "/var/lib/vpnkit/stats.db"
 FONT_DIR = "/usr/share/fonts/truetype/dejavu"
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,32}$")
 UNITS = ["xray.service", "sing-box.service", "nginx.service", "dnsmasq.service", "warp-ru.service",
-         "telemt.service", "mtproxyl-telemt.service",
+         "telemt.service", "mtproxyl-telemt.service", "vpnkit-panel.service",
+         "aivpn-server.service", "csqtt.service", "vk-turn-proxy.service",
          "traffic-guard.timer", "vpnkit-watch.timer", "vpnkit-backup.timer"]
 PERIODS = {1: "Сутки", 7: "Неделя", 30: "Месяц"}
 PROTOCOLS = {
@@ -347,6 +348,8 @@ def card_text(name):
                   "", "Подписка без AWG:", c["compat_url"]]
     elif c.get("sub_url"):
         lines += ["", "Подписка (Happ, v2rayNG, Hiddify):", c["sub_url"]]
+    if c.get("incy_url"):
+        lines += ["", "Открыть в INCY:", c["incy_url"]]
     for k, v in (c.get("routing") or {}).items():
         lines.append(f"Маршруты {k}: {v}")
     return "\n".join(lines), c
@@ -382,6 +385,15 @@ def clients_view():
 
 def send(chat, text, kb=None):
     p = {"chat_id": chat, "text": text, "disable_web_page_preview": True}
+    if chat > 0 and kb and "inline_keyboard" in kb:
+        try:
+            with open("/etc/vpnkit/panel.url") as file:
+                panel = file.read().strip()
+        except FileNotFoundError:
+            panel = ""
+        if panel.startswith("https://"):
+            kb = {"inline_keyboard": [*kb["inline_keyboard"],
+                                      [{"text": "Панель", "web_app": {"url": panel}}]]}
     if kb:
         p["reply_markup"] = kb
     api("sendMessage", **p)

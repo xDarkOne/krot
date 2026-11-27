@@ -9,10 +9,11 @@ const W = {
     topology: 'cascade',
     entry: {name: 'ru', host: '', rootPassword: '', role: 'entry', ok: false, keyed: false, via: '', viaName: ''},
     exit: {name: 'eu', host: '', rootPassword: '', role: 'exit', ok: false, keyed: false, via: '', viaName: ''},
+    portable: false, telegramToken: '', telegramAdmins: '', mtproxyToken: '',
     exitIPv6: '', realityServerName: '', realityPort: '',
     domain: '', hasDomain: true, dns: {}, created: false,
     choices: {},                                    // модуль → включён (только то, что меняли)
-    pre: {tunnel: 'es', sub: 'ru', exit: 'en'},     // поддомены по умолчанию
+    pre: {tunnel: 'es', sub: 'ru', exit: 'en', web: 'web'},     // поддомены по умолчанию
 };
 let onDone = null;
 let logLines = [];
@@ -45,7 +46,7 @@ export function startWizard(done, test = '') {
     // wizard-domain:<домен>:<IP входа>:<IP выхода>:<поддомен входа>:<поддомен выхода> — шаг домена и проверка DNS
     if (test.startsWith('wizard-domain:')) {
         const [dom, ein, xin, ep, xp] = test.slice(14).split(':');
-        Object.assign(W, {topology: 'cascade', domain: dom, hasDomain: true, pre: {tunnel: ep, sub: ep, exit: xp}});
+        Object.assign(W, {topology: 'cascade', domain: dom, hasDomain: true, pre: {tunnel: ep, sub: ep, exit: xp, web: 'web'}});
         W.entry.host = ein; W.exit.host = xin;
         W.step = steps().findIndex((s) => s.id === 'domain');
         render();
@@ -91,6 +92,8 @@ function setup() {
     return {
         topology: W.topology, entry: {...W.entry, role: solo() ? 'solo' : 'entry'}, exit: W.exit, domain: d,
         tunnelName: d ? `${W.pre.tunnel}.${d}` : '', subName: d ? `${W.pre.sub}.${d}` : '',
+        portable: W.portable, telegramToken: W.telegramToken, telegramAdmins: W.telegramAdmins,
+        mtproxyToken: W.mtproxyToken, webName: d && W.pre.web ? `${W.pre.web}.${d}` : '',
         exitIPv6: W.exitIPv6, realityServerName: W.realityServerName, realityPort: W.realityPort,
         exitName: d && !solo() ? `${W.pre.exit}.${d}` : '', choices: W.choices, dir: '',
     };
@@ -98,7 +101,7 @@ function setup() {
 
 function schemeStep() {
     const pick = (t) => () => {
-        if (W.topology !== t) { W.topology = t; W.choices = {}; W.dns = {}; }
+        if (W.topology !== t) { W.topology = t; W.choices = {}; W.dns = {}; W.portable = false; }
         next();
     };
     const opt = (t, head, pros, cons, needs) => el('div', {class: 'card scheme' + (W.topology === t ? ' chosen' : '')},
@@ -244,6 +247,7 @@ function domainStep() {
         tunnel: el('input', {value: W.pre.tunnel, maxlength: '30'}),
         sub: el('input', {value: W.pre.sub, maxlength: '30'}),
         exit: el('input', {value: W.pre.exit, maxlength: '30'}),
+        web: el('input', {value: W.pre.web, maxlength: '30'}),
     };
     const names = () => {
         const x = d.value.trim().toLowerCase();
@@ -251,6 +255,7 @@ function domainStep() {
         if (!x) return [];
         const out = [[`${p('tunnel')}.${x}`, W.entry.host, 'туннели: hysteria2, XHTTP, PQ'],
             [`${p('sub')}.${x}`, W.entry.host, 'подписки и маска прокси Telegram']];
+        if (p('web')) out.push([`${p('web')}.${x}`, W.entry.host, 'WEB Proxy MTProxyL']);
         if (!solo()) out.push([`${p('exit')}.${x}`, W.exit.host, 'витрина выхода']);
         return out;
     };
@@ -324,6 +329,7 @@ function domainStep() {
         el('div', {class: 'form'}, el('label', {}, 'Домен', d),
             el('label', {}, 'Поддомен туннелей', pre.tunnel),
             el('label', {}, 'Поддомен подписок', pre.sub),
+            el('label', {}, 'Поддомен WEB Proxy', pre.web),
             solo() ? null : el('label', {}, 'Поддомен выхода', pre.exit)),
         table,
         el('div', {class: 'row'}, el('button', {class: 'ghost', onclick: back}, 'Назад'), go));
@@ -337,6 +343,18 @@ function catalogStep() {
     const go = el('button', {}, 'Дальше');
     const state = {};   // модуль → {box, note}
     const clientNode = () => W.entry.name;
+    const token = el('input', {type: 'password', autocomplete: 'off', value: W.telegramToken});
+    const mtToken = el('input', {type: 'password', autocomplete: 'off', value: W.mtproxyToken});
+    const admins = el('input', {autocomplete: 'off', value: W.telegramAdmins});
+    const telegram = el('section', {class: 'card', hidden: ''},
+        el('h3', {}, 'Telegram'),
+        el('div', {class: 'form'},
+            el('label', {}, 'Токен бота от BotFather', token),
+            el('label', {}, 'Личный Telegram ID администратора', admins),
+            el('label', {}, 'Отдельный токен бота MTProxyL (по желанию)', mtToken)));
+    token.addEventListener('input', () => { W.telegramToken = token.value.trim(); });
+    admins.addEventListener('input', () => { W.telegramAdmins = admins.value.trim(); });
+    mtToken.addEventListener('input', () => { W.mtproxyToken = mtToken.value.trim(); });
 
     const refresh = async () => {
         try {
@@ -353,6 +371,7 @@ function catalogStep() {
                 const wanted = !c.auto && (W.choices[name] ?? (c.default || c.required));
                 st.note.className = 'small ' + (s.skip && wanted ? 'err' : 'muted');
             }
+            telegram.hidden = !(pv.steps || []).some(s => s.module === 'vpn-bot' && !s.skip);
             const pr = pv.problems || [];
             problems.replaceChildren(...pr.map((p) => el('div', {class: 'checks bad'}, '✗ ' + p)));
             go.disabled = pr.length ? '' : null;
@@ -390,7 +409,13 @@ function catalogStep() {
                             note));
                 }))));
         }
-        body.replaceChildren(...parts);
+        const preset = !solo() && W.hasDomain ? el('div', {class: 'card row'},
+            el('button', {onclick: () => {
+                W.portable = true;
+                for (const name of cat.portable || []) W.choices[name] = true;
+                refresh();
+            }}, 'Выбрать полный каскад')) : null;
+        body.replaceChildren(...[preset, ...parts, telegram].filter(Boolean));
         refresh();
     }).catch((e) => body.replaceChildren(el('div', {class: 'err'}, errText(e))));
 
@@ -411,6 +436,7 @@ function deployStep() {
         try {
             if (!W.created) {
                 await WCreate(setup());
+                W.telegramToken = ''; W.telegramAdmins = ''; W.mtproxyToken = '';
                 W.created = true;
             }
             const plan = (await WPlan()).filter((s) => !(s.skip && (s.reason === 'не нужен' || s.reason === 'не выбран')));

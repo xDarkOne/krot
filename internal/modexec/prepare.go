@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/xDarkOne/krot/agent"
 	"github.com/xDarkOne/krot/internal/awgkeys"
@@ -28,10 +29,16 @@ func Prepare(inv *inventory.Inventory, n *inventory.Node, module string, sec *se
 	switch module {
 	case "cascade-awg0":
 		return prepareCascade(inv, n, p, sec)
-	case "client-awg":
-		return prepareClientAWG(n, p, sec)
+	case "client-awg", "client-awg-legacy", "client-wireguard":
+		return prepareClientAWG(n, module, p, sec)
 	case "amneziawg":
 		return prepareAmneziaWG(p)
+	case "aivpn", "csqtt":
+		return prepareExtraTransport(module, n, p, sec)
+	case "vk-turn-proxy":
+		return prepareVKTurn(n, p, sec)
+	case "exit-socks":
+		return prepareExitSocks(n, p, sec)
 	case "nginx-tls":
 		return prepareNginxTLS(n, p, sec)
 	case "xray":
@@ -39,6 +46,15 @@ func Prepare(inv *inventory.Inventory, n *inventory.Node, module string, sec *se
 	case "hysteria2":
 		return prepareHysteria2(n, p)
 	case "subscriptions":
+		return prepareSubscriptions(n, p)
+	case "vpn-panel":
+		p = Params(n, "subscriptions")
+		p["TIMEZONE"] = Params(n, "base-host")["TIMEZONE"]
+		if p["TIMEZONE"] != "" {
+			if _, err := time.LoadLocation(p["TIMEZONE"]); err != nil || p["TIMEZONE"] == "Local" {
+				return nil, fmt.Errorf("неверный часовой пояс панели")
+			}
+		}
 		return prepareSubscriptions(n, p)
 	case "mtproxy":
 		return prepareMTProxy(n, p, sec)
@@ -213,7 +229,7 @@ func prepareCascade(inv *inventory.Inventory, n *inventory.Node, p map[string]st
 }
 
 // SecretParams — какие параметры не печатать в плане и журналах.
-var SecretParams = map[string]bool{"PRIVATE": true, "PRIV": true, "PSK": true, "HPK": true, "TG_TOKEN": true, "REALITY_PRIVATE": true, "REALITY_UUID": true, "REALITY_SHORT_ID": true}
+var SecretParams = map[string]bool{"PRIVATE": true, "PRIV": true, "PSK": true, "HPK": true, "TG_TOKEN": true, "REALITY_PRIVATE": true, "REALITY_UUID": true, "REALITY_SHORT_ID": true, "CSQTT_PASSWORD": true, "CSQTT_ADMIN_PASSWORD": true, "WRAP_KEY": true, "SOCKS_PASSWORD": true, "TGBOT_TOKEN": true}
 
 // randInt — криптостойкое случайное число в [0, n).
 func randInt(n int64) int64 {
@@ -226,74 +242,86 @@ func randInt(n int64) int64 {
 
 // prepareClientAWG — клиентский вход AmneziaWG на entry: ключ сервера, HPK, порт, обфускация
 // (своя, отличная от каскада). Секреты: <узел>/client-awg/<iface>/*.
-func prepareClientAWG(n *inventory.Node, p map[string]string, sec *secrets.Store) (map[string]string, error) {
-	cfg := n.Modules["client-awg"]
-	get := func(k, def string) string {
-		if v, ok := cfg[k]; ok {
-			return fmt.Sprint(v)
-		}
-		return def
+func prepareClientAWG(n *inventory.Node, module string, p map[string]string, sec *secrets.Store) (map[string]string, error) {
+	a := n.AccessForModule(module)
+	get := func(key, fallback string) string { return a.Value(n, key, fallback) }
+	if !inventory.InterfaceName.MatchString(a.Iface) || a.Iface == "awg0" {
+		return nil, fmt.Errorf("недопустимое имя клиентского интерфейса")
 	}
-	iface := get("iface", "awg2")
-	netw := get("net", "10.9.2.0/24")
+	if module == "client-awg" && a.Iface != "awg2" {
+		for _, variant := range inventory.ClientAccesses[1:] {
+			if n.AccessForModule(variant.Module).Iface == a.Iface && fmt.Sprint(n.Modules[variant.Module]["enabled"]) == "true" {
+				return nil, fmt.Errorf("интерфейс %s используется другим клиентским модулем", a.Iface)
+			}
+		}
+	}
+	netw := get("net", a.Net)
 	ip, ipnet, err := net.ParseCIDR(netw)
 	if err != nil || ip.To4() == nil {
 		return nil, fmt.Errorf("client-awg net %q: нужна IPv4-сеть", netw)
 	}
+	ones, _ := ipnet.Mask.Size()
+	if ones < 24 || ones > 30 {
+		return nil, fmt.Errorf("клиентский вход: нужна сеть от /24 до /30")
+	}
 	b := ipnet.IP.To4()
-	gw := net.IPv4(b[0], b[1], b[2], b[3]+1).String()
-
-	ns := n.Name + "/client-awg/" + iface + "/"
+	ns := n.Name + "/" + module + "/" + a.Iface + "/"
 	changed := false
 	priv, err := ensure(sec, ns+"private", func() (string, error) { k, e := awgkeys.NewKeypair(); return k.Private, e }, &changed)
 	if err != nil {
 		return nil, err
 	}
-	hpk, err := ensure(sec, ns+"hpk", awgkeys.NewSymmetric, &changed)
-	if err != nil {
-		return nil, err
-	}
 	port, err := ensure(sec, ns+"port", func() (string, error) {
-		if v, ok := cfg["port"]; ok {
-			return fmt.Sprint(v), nil
+		return get("port", fmt.Sprint(20000+int(randInt(40000)))), nil
+	}, &changed)
+	if err != nil {
+		return nil, err
+	}
+	for label, value := range map[string]string{
+		"PORT": port, "MTU": get("mtu", a.MTU), "MSS": get("mss", a.MSS),
+		"RULE_MAIN": get("rule_main", a.RuleMain), "RULE_CASCADE": get("rule_cascade", a.RuleCascade),
+	} {
+		p[label] = value
+		if err := transportPort(p, label, ""); err != nil {
+			return nil, err
 		}
-		return fmt.Sprint(20000 + int(randInt(40000))), nil
-	}, &changed)
-	if err != nil {
-		return nil, err
 	}
-	obfsJSON, err := ensure(sec, ns+"obfs", func() (string, error) {
-		b, e := json.Marshal(awgkeys.NewObfsWith(awgkeys.ClientI))
-		return string(b), e
-	}, &changed)
-	if err != nil {
-		return nil, err
+	if a.Tool == "awg" {
+		obfsJSON, err := ensure(sec, ns+"obfs", func() (string, error) {
+			b, e := json.Marshal(awgkeys.NewObfsWith(awgkeys.ClientI))
+			return string(b), e
+		}, &changed)
+		if err != nil {
+			return nil, err
+		}
+		var obfs awgkeys.Obfs
+		if err := json.Unmarshal([]byte(obfsJSON), &obfs); err != nil {
+			return nil, fmt.Errorf("секрет %sobfs повреждён: %w", ns, err)
+		}
+		if err := obfs.Valid(); err != nil {
+			return nil, fmt.Errorf("обфускация входа недопустима: %w", err)
+		}
+		p["OBFS"] = strings.TrimRight(obfs.Lines(), "\n")
 	}
-	var obfs awgkeys.Obfs
-	if err := json.Unmarshal([]byte(obfsJSON), &obfs); err != nil {
-		return nil, fmt.Errorf("секрет %sobfs повреждён: %w", ns, err)
-	}
-	if err := obfs.Valid(); err != nil {
-		return nil, fmt.Errorf("обфускация входа недопустима: %w", err)
+	if module == "client-awg" {
+		p["HPK"], err = ensure(sec, ns+"hpk", awgkeys.NewSymmetric, &changed)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if changed {
 		if err := sec.Save(); err != nil {
 			return nil, err
 		}
 	}
-	p["IFACE"] = iface
-	p["NET"] = netw
-	p["GW"] = gw
-	p["PORT"] = port
-	p["MTU"] = get("mtu", "1260")
-	p["MSS"] = get("mss", "1220")
-	p["PRIVATE"] = priv
-	p["HPK"] = hpk
-	p["OBFS"] = strings.TrimRight(obfs.Lines(), "\n")
-	p["RULE_MAIN"] = get("rule_main", "208")
-	p["RULE_CASCADE"] = get("rule_cascade", "212")
-	// вход каскада — российское напрямую, остальное в awg0; один сервер — всё напрямую
+	p["IFACE"], p["NET"], p["GW"] = a.Iface, ipnet.String(), net.IPv4(b[0], b[1], b[2], b[3]+1).String()
+	p["PRIVATE"], p["WG_TOOL"], p["CONF_DIR"] = priv, a.Tool, a.ConfigDir()
 	p["CASCADE"] = map[bool]string{true: "1", false: "0"}[n.Role == "entry"]
+	endpoint := get("endpoint", n.Host)
+	if net.ParseIP(endpoint) == nil && !validRealityName(endpoint) {
+		return nil, fmt.Errorf("клиентский вход: неверный публичный адрес")
+	}
+	p["CLIENT_ENDPOINT"] = endpoint
 	return p, nil
 }
 
@@ -542,6 +570,21 @@ func prepareXray(inv *inventory.Inventory, n *inventory.Node, p map[string]strin
 			return nil, err
 		}
 		p["CASCADE"], p["EXIT_IP"] = "1", exit.Host
+		domains := names(n.Modules["xray"]["socks_exit_domains"])
+		if len(domains) > 0 {
+			for _, domain := range domains {
+				if !validRealityName(domain) {
+					return nil, fmt.Errorf("xray: неверное имя SOCKS-маршрута %q", domain)
+				}
+			}
+			proxy, err := prepareExitSocks(exit, Params(exit, "exit-socks"), sec)
+			if err != nil {
+				return nil, err
+			}
+			p["EXIT_SOCKS_ADDR"], p["EXIT_SOCKS_PORT"] = proxy["BIND_IP"], proxy["PORT"]
+			p["SOCKS_PASSWORD"] = proxy["SOCKS_PASSWORD"]
+			p["EXIT_SOCKS_DOMAINS"] = strings.Join(domains, " ")
+		}
 	}
 	return p, nil
 }
@@ -569,6 +612,16 @@ func prepareHysteria2(n *inventory.Node, p map[string]string) (map[string]string
 		p["HY2_PORT"] = "443"
 	}
 	p["SINGBOX_VERSION"], p["SINGBOX_SHA256_AMD64"], p["SINGBOX_SHA256_ARM64"] = SingBoxVersion, singboxSHA256AMD, singboxSHA256ARM
+	switch strings.ToLower(p["PER_CLIENT"]) {
+	case "true", "yes", "on", "1":
+		p["HY2_PER_CLIENT"] = "1"
+	default:
+		p["HY2_PER_CLIENT"] = "0"
+	}
+	p["HY2_VLESS_PORT"] = p["VLESS_PORT"]
+	if err := transportPort(p, "HY2_VLESS_PORT", "10802"); err != nil {
+		return nil, err
+	}
 	return p, nil
 }
 
@@ -680,6 +733,12 @@ func prepareMTProxy(n *inventory.Node, p map[string]string, sec *secrets.Store) 
 // pins — закреплённые версии, от которых зависит модуль: смена пина — тоже новая версия модуля.
 func pins(module string) string {
 	switch module {
+	case "vk-turn-proxy":
+		return vkSourcePin + vkSourceSHA
+	case "aivpn":
+		return aivpnTag + aivpnMasks + aivpnAssets["amd64"].digest + aivpnAssets["arm64"].digest
+	case "csqtt":
+		return csqttTag + csqttAPK + csqttAssets["amd64"].digest + csqttAssets["arm64"].digest
 	case "cascade-awg0":
 		return pins("xray") + pins("hysteria2")
 	case "xray":

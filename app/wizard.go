@@ -96,6 +96,11 @@ type WSetup struct {
 	SubName           string          `json:"subName"`    // подписки и маска Telegram (ru.<домен>)
 	ExitIPv6          string          `json:"exitIPv6"`
 	RealityServerName string          `json:"realityServerName"`
+	Portable          bool            `json:"portable"`
+	WebName           string          `json:"webName"`
+	MTProxyToken      string          `json:"mtproxyToken"`
+	TelegramToken     string          `json:"telegramToken"`
+	TelegramAdmins    string          `json:"telegramAdmins"`
 	RealityPort       string          `json:"realityPort"`
 	ExitName          string          `json:"exitName"` // витрина выхода (en.<домен>), только каскад
 	Choices           map[string]bool `json:"choices"`  // модуль → включён (только то, что пользователь менял)
@@ -106,7 +111,10 @@ type WSetup struct {
 func (w WSetup) build() (*inventory.Inventory, error) {
 	var en, xn []string
 	if w.Domain != "" {
-		en = uniq(w.TunnelName, w.SubName)
+		en = uniq(w.TunnelName, w.SubName, w.WebName)
+		if w.WebName != "" && (w.WebName == w.SubName || w.WebName == w.TunnelName) {
+			return nil, fmt.Errorf("для WEB Proxy нужно отдельное DNS-имя")
+		}
 		xn = uniq(w.ExitName)
 	}
 	var inv *inventory.Inventory
@@ -151,6 +159,12 @@ func (w WSetup) build() (*inventory.Inventory, error) {
 		e.Modules["nginx-tls"]["tunnel_name"] = w.TunnelName
 		e.Modules["subscriptions"] = map[string]any{"sub_name": w.SubName}
 		e.Modules["mtproxy"] = map[string]any{"mask_name": w.SubName}
+		if w.WebName != "" {
+			e.Modules["mtproxy"]["web_name"] = w.WebName
+		} else {
+			// Inventories created before the separate WEB Proxy DNS field use telemt.
+			e.Modules["mtproxy"]["backend"] = "telemt"
+		}
 	}
 	// выбор пользователя пишется, только где он отличается от умолчания каталога —
 	// иначе inventory зашумлён, а смена умолчаний в новых версиях до него не дойдёт
@@ -158,7 +172,7 @@ func (w WSetup) build() (*inventory.Inventory, error) {
 	for _, m := range modules.Offered() {
 		on, ok := w.Choices[m.Name]
 		c := m.Catalog
-		if !ok || c.Required || c.Auto || on == c.Default {
+		if !ok || c.Required || c.Auto || (!w.Portable && on == c.Default) {
 			continue
 		}
 		for _, role := range c.Place[topo] {
@@ -173,6 +187,12 @@ func (w WSetup) build() (*inventory.Inventory, error) {
 			}
 		}
 	}
+	if w.Portable && topo == "cascade" {
+		if w.WebName == "" {
+			return nil, fmt.Errorf("для полного каскада укажите DNS-имя WEB Proxy")
+		}
+		inv.ApplyPortableCascade()
+	}
 	return inv, nil
 }
 
@@ -181,6 +201,48 @@ func (a *App) WCreate(w WSetup) (State, error) {
 	inv, err := w.build()
 	if err != nil {
 		return State{}, err
+	}
+	token := strings.TrimSpace(w.TelegramToken)
+	entry := inv.Nodes[w.Entry.Name]
+	selected := wizard.Select(inv.Topo(), entry)
+	var admins []string
+	if token != "" || selected["vpn-bot"].On {
+		if !alerts.ValidToken(token) {
+			return State{}, fmt.Errorf("укажите токен Telegram-бота от BotFather")
+		}
+		admins, err = alerts.ParseChats(w.TelegramAdmins)
+		if err != nil {
+			return State{}, err
+		}
+	}
+	if selected["vpn-panel"].On {
+		hasPrivate := false
+		for _, id := range admins {
+			hasPrivate = hasPrivate || (!strings.HasPrefix(id, "-") && strings.Trim(id, "0") != "")
+		}
+		if !hasPrivate {
+			return State{}, fmt.Errorf("панели нужен личный Telegram ID администратора")
+		}
+	}
+	mtToken := strings.TrimSpace(w.MTProxyToken)
+	if mtToken != "" {
+		if !alerts.ValidToken(mtToken) || mtToken == token {
+			return State{}, fmt.Errorf("для MTProxyL нужен отдельный корректный токен Telegram")
+		}
+		if w.WebName == "" {
+			return State{}, fmt.Errorf("для MTProxyL нужно DNS-имя WEB Proxy")
+		}
+		privateID := ""
+		for _, id := range admins {
+			if !strings.HasPrefix(id, "-") && strings.Trim(id, "0") != "" {
+				privateID = id
+				break
+			}
+		}
+		if privateID == "" {
+			return State{}, fmt.Errorf("для бота MTProxyL нужен личный Telegram ID администратора")
+		}
+		entry.Modules["mtproxy"]["tgbot_admin"] = privateID
 	}
 	dir := w.Dir
 	if dir == "" {
@@ -194,9 +256,6 @@ func (a *App) WCreate(w WSetup) (State, error) {
 	if _, err := os.Stat(path); err == nil {
 		return State{}, fmt.Errorf("%s уже есть — выберите другую папку", path)
 	}
-	if err := inv.Save(path); err != nil {
-		return State{}, err
-	}
 	// хранилище секретов на ключе пульта: без пароля, ключ — ~/.krot/age.key
 	id, err := secrets.LoadKey()
 	if err != nil {
@@ -208,14 +267,35 @@ func (a *App) WCreate(w WSetup) (State, error) {
 		}
 	}
 	sp := secrets.DefaultPath(path)
-	if !secrets.Exists(sp) {
-		s, err := secrets.CreateWithKey(sp, id)
-		if err != nil {
+	var s *secrets.Store
+	if secrets.Exists(sp) {
+		s, err = secrets.Open(sp)
+	} else {
+		s, err = secrets.CreateWithKey(sp, id)
+	}
+	if err != nil {
+		return State{}, err
+	}
+	if token != "" {
+		if err := s.Set(alerts.TokenKey, token); err != nil {
 			return State{}, err
 		}
+		if err := s.Set(alerts.ChatsKey, strings.Join(admins, " ")); err != nil {
+			return State{}, err
+		}
+	}
+	if mtToken != "" {
+		if err := s.Set(modexec.MTProxyBotTokenKey(entry.Name), mtToken); err != nil {
+			return State{}, err
+		}
+	}
+	if token != "" || mtToken != "" {
 		if err := s.Save(); err != nil {
 			return State{}, err
 		}
+	}
+	if err := inv.Save(path); err != nil {
+		return State{}, err
 	}
 	if err := a.open(path); err != nil {
 		return State{}, err
@@ -225,8 +305,9 @@ func (a *App) WCreate(w WSetup) (State, error) {
 
 // WCatalogView — каталог для шага «Состав»: разделы и модули схемы по порядку.
 type WCatalogView struct {
-	Groups  []modules.Group `json:"groups"`
-	Modules []ModuleView    `json:"modules"`
+	Groups   []modules.Group `json:"groups"`
+	Modules  []ModuleView    `json:"modules"`
+	Portable []string        `json:"portable"`
 }
 
 // WCatalog — что можно поставить в схеме topo (без узлов: только каталог).
@@ -234,7 +315,7 @@ func (a *App) WCatalog(topo string) (WCatalogView, error) {
 	if _, ok := modules.Topologies[topo]; !ok {
 		return WCatalogView{}, fmt.Errorf("схема %q: допустимы cascade и solo", topo)
 	}
-	out := WCatalogView{Groups: modules.Groups}
+	out := WCatalogView{Groups: modules.Groups, Portable: inventory.PortableOptionalModules}
 	for _, m := range modules.Offered() {
 		if len(m.Catalog.Place[topo]) > 0 {
 			out.Modules = append(out.Modules, ModuleView{Name: m.Name, Catalog: m.Catalog})

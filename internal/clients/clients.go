@@ -29,46 +29,47 @@ type Input struct {
 	Port                          string
 	ServerPublic, HPK             string
 	Obfs                          awgkeys.Obfs
+	Access                        inventory.ClientAccess
 }
 
 // LoadInput собирает параметры входа (вход должен быть установлен модулем client-awg).
 func LoadInput(n *inventory.Node, iface string, sec *secrets.Store) (Input, error) {
-	cfg := n.Modules["client-awg"]
-	get := func(k, def string) string {
-		if v, ok := cfg[k]; ok {
-			return fmt.Sprint(v)
-		}
-		return def
+	a := n.AccessForInterface(iface)
+	if !inventory.InterfaceName.MatchString(a.Iface) {
+		return Input{}, fmt.Errorf("недопустимое имя интерфейса")
 	}
-	if iface == "" {
-		iface = get("iface", "awg2")
-	}
-	ns := n.Name + "/client-awg/" + iface + "/"
-	priv, ok1 := sec.Get(ns + "private")
-	port, ok2 := sec.Get(ns + "port")
-	hpk, ok3 := sec.Get(ns + "hpk")
-	ob, ok4 := sec.Get(ns + "obfs")
-	if !(ok1 && ok2 && ok3 && ok4) {
-		return Input{}, fmt.Errorf("в хранилище нет параметров входа %s на %s — сначала krot install %s client-awg", iface, n.Name, n.Name)
+	get := func(key, fallback string) string { return a.Value(n, key, fallback) }
+	ns := n.Name + "/" + a.Module + "/" + a.Iface + "/"
+	priv, hasPrivate := sec.Get(ns + "private")
+	port, hasPort := sec.Get(ns + "port")
+	hpk, hasHPK := sec.Get(ns + "hpk")
+	ob, hasObfs := sec.Get(ns + "obfs")
+	if !(hasPrivate && hasPort) || (a.Module == "client-awg" && !hasHPK) || (a.Tool == "awg" && !hasObfs) {
+		return Input{}, fmt.Errorf("в хранилище нет параметров входа %s — сначала krot install %s %s", a.Iface, n.Name, a.Module)
 	}
 	pub, err := awgkeys.PublicOf(priv)
 	if err != nil {
 		return Input{}, err
 	}
 	var o awgkeys.Obfs
-	if err := json.Unmarshal([]byte(ob), &o); err != nil {
-		return Input{}, err
+	if a.Tool == "awg" {
+		if err := json.Unmarshal([]byte(ob), &o); err != nil {
+			return Input{}, err
+		}
 	}
-	netw := get("net", "10.9.2.0/24")
+	netw := get("net", a.Net)
 	_, ipnet, err := net.ParseCIDR(netw)
 	if err != nil {
 		return Input{}, err
 	}
 	b := ipnet.IP.To4()
+	if b == nil {
+		return Input{}, fmt.Errorf("клиентский вход требует IPv4-сеть")
+	}
 	return Input{
-		Iface: iface, Net: netw, GW: net.IPv4(b[0], b[1], b[2], b[3]+1).String(),
-		Endpoint: get("endpoint", n.Host), MTU: get("mtu", "1260"), Port: port,
-		ServerPublic: pub, HPK: hpk, Obfs: o,
+		Iface: a.Iface, Net: ipnet.String(), GW: net.IPv4(b[0], b[1], b[2], b[3]+1).String(),
+		Endpoint: get("endpoint", n.Host), MTU: get("mtu", a.MTU), Port: port,
+		ServerPublic: pub, HPK: hpk, Obfs: o, Access: a,
 	}, nil
 }
 
@@ -76,8 +77,9 @@ func LoadInput(n *inventory.Node, iface string, sec *secrets.Store) (Input, erro
 type Peer struct{ Name, IP string }
 
 // ReadPeers читает клиентов из конфига входа на узле (комментарий «# name:» + AllowedIPs).
-func ReadPeers(ctx context.Context, cl *remote.Client, iface string) ([]Peer, error) {
-	r, err := cl.Run(ctx, "cat /etc/amnezia/amneziawg/"+iface+".conf\n")
+func ReadPeers(ctx context.Context, cl *remote.Client, in Input) ([]Peer, error) {
+	iface := in.Iface
+	r, err := cl.Run(ctx, "cat "+in.Access.ConfigDir()+"/"+iface+".conf\n")
 	if err != nil {
 		return nil, err
 	}
@@ -121,15 +123,20 @@ func freeIP(in Input, used []Peer) (string, error) {
 
 // Profile — собранный профиль клиента.
 type Profile struct {
-	Name, IP, Conf, Link string
+	Name, IP, Conf, Link, Interface string
 }
 
 // BuildConf — профиль клиента для AmneziaVPN/awg-quick.
 func BuildConf(in Input, ip, clientPriv, psk string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[Interface]\nAddress = %s/32\nDNS = %s\nMTU = %s\nPrivateKey = %s\n", ip, in.GW, in.MTU, clientPriv)
-	b.WriteString(in.Obfs.Lines())
-	fmt.Fprintf(&b, "HeaderProtectionKey = %s\nContentPaddingAddition = 0-16\n\n", in.HPK)
+	if in.Access.Tool != "wg" {
+		b.WriteString(in.Obfs.Lines())
+	}
+	if in.HPK != "" {
+		fmt.Fprintf(&b, "HeaderProtectionKey = %s\nContentPaddingAddition = 0-16\n", in.HPK)
+	}
+	b.WriteByte('\n')
 	fmt.Fprintf(&b, "[Peer]\nPublicKey = %s\nPresharedKey = %s\nAllowedIPs = 0.0.0.0/0, ::/0\nEndpoint = %s\nPersistentKeepalive = 25\n",
 		in.ServerPublic, psk, net.JoinHostPort(in.Endpoint, in.Port))
 	return b.String()
@@ -137,6 +144,9 @@ func BuildConf(in Input, ip, clientPriv, psk string) string {
 
 // VPNLink — ссылка vpn:// для AmneziaVPN (формат AmneziaVPN: JSON → zlib → 4 байта длины → base64url).
 func VPNLink(name string, in Input, ip, conf, clientPriv, psk string) (string, error) {
+	if in.Access.Module != "" && in.Access.Module != "client-awg" {
+		return "", nil
+	}
 	obf := map[string]string{}
 	for _, l := range strings.Split(in.Obfs.Lines(), "\n") {
 		if k, v, ok := strings.Cut(l, " = "); ok {
@@ -197,20 +207,26 @@ func VPNLink(name string, in Input, ip, conf, clientPriv, psk string) (string, e
 }
 
 // addPeer: копия конфига → дописать блок → живой awg set (без перезапуска входа) → проверка.
-func addPeer(ctx context.Context, cl *remote.Client, iface, name, pub, psk, ip string) error {
+func addPeer(ctx context.Context, cl *remote.Client, in Input, name, pub, psk, ip string) error {
 	script := fmt.Sprintf(`set -e
 umask 077
-c=/etc/amnezia/amneziawg/%[1]s.conf
+exec 9>/etc/vpnkit/.client.lock
+flock 9
+c=%[6]s/%[1]s.conf
+if grep -qxF '# name: %[2]s' "$c" || grep -qxF 'AllowedIPs = %[5]s/32' "$c"; then
+  echo 'имя или адрес уже заняты другим клиентом' >&2
+  exit 1
+fi
 mkdir -p /var/lib/vpnkit/clients-backup
 cp -a "$c" "/var/lib/vpnkit/clients-backup/%[1]s.conf.$(date +%%Y%%m%%d-%%H%%M%%S)"
 ls -1t /var/lib/vpnkit/clients-backup/%[1]s.conf.* | tail -n +21 | xargs -r rm -f
 printf '\n# name: %[2]s\n[Peer]\nPublicKey = %[3]s\nPresharedKey = %[4]s\nAllowedIPs = %[5]s/32\n' >> "$c"
-f=$(mktemp); printf '%%s\n' '%[4]s' > "$f"
-awg set %[1]s peer '%[3]s' preshared-key "$f" allowed-ips %[5]s/32
+f=$(mktemp); trap 'rm -f "$f"' EXIT; printf '%%s\n' '%[4]s' > "$f"
+%[7]s set %[1]s peer '%[3]s' preshared-key "$f" allowed-ips %[5]s/32
 rm -f "$f"
-awg show %[1]s allowed-ips | grep -q '%[5]s/32'
+%[7]s show %[1]s allowed-ips | grep -q '%[5]s/32'
 echo ok
-`, iface, name, pub, psk, ip)
+`, in.Iface, name, pub, psk, ip, in.Access.ConfigDir(), in.Access.Tool)
 	r, err := cl.Run(ctx, script)
 	if err != nil {
 		return err
@@ -234,7 +250,7 @@ func Resync(ctx context.Context, n *inventory.Node, iface string, sec *secrets.S
 		return nil, nil, err
 	}
 	defer cl.Close()
-	peers, err := ReadPeers(ctx, cl, in.Iface)
+	peers, err := ReadPeers(ctx, cl, in)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -267,7 +283,7 @@ func Resync(ctx context.Context, n *inventory.Node, iface string, sec *secrets.S
 			return added, nil, fmt.Errorf("профиль %s в хранилище повреждён: %w", name, err)
 		}
 		ip := strings.TrimSuffix(val("Address"), "/32")
-		if err := addPeer(ctx, cl, in.Iface, name, pub, val("PresharedKey"), ip); err != nil {
+		if err := addPeer(ctx, cl, in, name, pub, val("PresharedKey"), ip); err != nil {
 			return added, nil, fmt.Errorf("%s: %s", name, secrets.Mask(err.Error(), []string{val("PresharedKey")}))
 		}
 		log(fmt.Sprintf("пир %s (%s) возвращён на %s из хранилища", name, ip, in.Iface))
@@ -302,7 +318,7 @@ func Add(ctx context.Context, n *inventory.Node, iface, name string, sec *secret
 		return Profile{}, err
 	}
 	defer cl.Close()
-	peers, err := ReadPeers(ctx, cl, in.Iface)
+	peers, err := ReadPeers(ctx, cl, in)
 	if err != nil {
 		return Profile{}, err
 	}
@@ -323,7 +339,7 @@ func Add(ctx context.Context, n *inventory.Node, iface, name string, sec *secret
 	if err != nil {
 		return Profile{}, err
 	}
-	if err := addPeer(ctx, cl, in.Iface, name, kp.Public, psk, ip); err != nil {
+	if err := addPeer(ctx, cl, in, name, kp.Public, psk, ip); err != nil {
 		return Profile{}, fmt.Errorf("добавление пира на узле не удалось: %s", secrets.Mask(err.Error(), []string{psk, kp.Private}))
 	}
 	log(fmt.Sprintf("пир %s (%s) добавлен на %s без перезапуска входа", name, ip, in.Iface))
@@ -339,7 +355,7 @@ func Add(ctx context.Context, n *inventory.Node, iface, name string, sec *secret
 	if err := sec.Save(); err != nil {
 		return Profile{}, fmt.Errorf("пир добавлен, но профиль не сохранён в хранилище: %w", err)
 	}
-	return Profile{Name: name, IP: ip, Conf: conf, Link: link}, nil
+	return Profile{Name: name, IP: ip, Conf: conf, Link: link, Interface: in.Iface}, nil
 }
 
 // Del удаляет клиента со входа: копия конфига → блок пира из файла → awg set … remove
@@ -360,7 +376,9 @@ func Del(ctx context.Context, n *inventory.Node, iface, name string, sec *secret
 	defer cl.Close()
 	script := fmt.Sprintf(`set -e
 umask 077
-c=/etc/amnezia/amneziawg/%[1]s.conf
+exec 9>/etc/vpnkit/.client.lock
+flock 9
+c=%[3]s/%[1]s.conf
 mkdir -p /var/lib/vpnkit/clients-backup
 python3 - "$c" '%[2]s' > /root/.vk-del.out <<'PY'
 import sys
@@ -389,10 +407,10 @@ pub=$(cat /root/.vk-del.out); rm -f /root/.vk-del.out
 if [ -z "$pub" ]; then echo absent; exit 0; fi
 cp -a "$c" "/var/lib/vpnkit/clients-backup/%[1]s.conf.$(date +%%Y%%m%%d-%%H%%M%%S)"
 chmod 600 "$c.vk-new" && mv "$c.vk-new" "$c"
-awg set %[1]s peer "$pub" remove
-if awg show %[1]s peers | grep -qxF "$pub"; then echo "пир всё ещё в интерфейсе" >&2; exit 1; fi
+%[4]s set %[1]s peer "$pub" remove
+if %[4]s show %[1]s peers | grep -qxF "$pub"; then echo "пир всё ещё в интерфейсе" >&2; exit 1; fi
 echo removed
-`, in.Iface, name)
+`, in.Iface, name, in.Access.ConfigDir(), in.Access.Tool)
 	r, err := cl.Run(ctx, script)
 	if err != nil || r.Code != 0 {
 		return fmt.Errorf("удаление пира на узле не удалось: %v %s", err, strings.TrimSpace(r.Stderr))
@@ -436,7 +454,7 @@ func Show(n *inventory.Node, iface, name string, sec *secrets.Store) (Profile, e
 	}
 	ip := strings.TrimSuffix(val("Address"), "/32")
 	link, err := VPNLink(name, in, ip, conf, val("PrivateKey"), val("PresharedKey"))
-	return Profile{Name: name, IP: ip, Conf: conf, Link: link}, err
+	return Profile{Name: name, IP: ip, Conf: conf, Link: link, Interface: in.Iface}, err
 }
 
 // Names — клиенты узла из хранилища.

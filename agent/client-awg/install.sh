@@ -3,14 +3,16 @@
 # VK_RULE_MAIN / VK_RULE_CASCADE — приоритеты ip rule. VK_CASCADE: 1 — вход каскада (российское
 # напрямую, остальное в awg0), 0 — один сервер (всё напрямую). Описание — docs/20-server-modules/client-awg.md
 : "${VK_IFACE:?}" "${VK_NET:?}" "${VK_GW:?}" "${VK_PORT:?}" "${VK_MTU:?}" "${VK_MSS:?}" "${VK_PRIVATE:?}" \
-  "${VK_HPK:?}" "${VK_OBFS:?}" "${VK_RULE_MAIN:?}" "${VK_RULE_CASCADE:?}" "${VK_CASCADE:=1}"
-command -v awg-quick >/dev/null || die "нет awg-quick — сначала модуль amneziawg"
+  "${VK_RULE_MAIN:?}" "${VK_RULE_CASCADE:?}" "${VK_CASCADE:=1}"
+[ "${VK_WG_TOOL:-awg}" != wg ] || apt_install wireguard-tools
+command -v "${VK_WG_TOOL:-awg}-quick" >/dev/null || die "нет утилиты quick для клиентского входа"
 if [ "$VK_CASCADE" = 1 ]; then
   nft list table inet vpnkit_split >/dev/null 2>&1 || die "нет split-routing — сначала модуль split-routing"
   ip link show awg0 >/dev/null 2>&1 || die "нет каскада awg0 — сначала cascade-awg0"
 fi
 I=$VK_IFACE
-conf=/etc/amnezia/amneziawg/$I.conf
+: "${VK_WG_TOOL:=awg}" "${VK_CONF_DIR:=/etc/amnezia/amneziawg}"
+conf=$VK_CONF_DIR/$I.conf
 pfx=${VK_NET#*/}
 [ -e "$conf" ] || echo "$I" >> "$VK_RUN/created.list"
 
@@ -23,9 +25,11 @@ iface=$(
   echo "MTU = $VK_MTU"
   echo "Table = off"
   echo "PrivateKey = $VK_PRIVATE"
-  printf '%s\n' "$VK_OBFS"
-  echo "HeaderProtectionKey = $VK_HPK"
-  echo "ContentPaddingAddition = 0-16"
+  [ -z "${VK_OBFS:-}" ] || printf '%s\n' "$VK_OBFS"
+  if [ -n "${VK_HPK:-}" ]; then
+    echo "HeaderProtectionKey = $VK_HPK"
+    echo "ContentPaddingAddition = 0-16"
+  fi
   if [ "$VK_CASCADE" = 1 ]; then
     echo "PostUp = ip rule add from $VK_NET fwmark 0x1 table main priority $VK_RULE_MAIN"
     echo "PostUp = ip rule add from $VK_NET table 200 priority $VK_RULE_CASCADE"
@@ -40,9 +44,9 @@ if [ -f "$conf" ]; then
   peers=$(awk 'f||/^# name:|^\[Peer\]/{f=1; print}' "$conf")
   old_iface=$(awk '/^# name:|^\[Peer\]/{exit} {print}' "$conf")
 fi
-mkdir -p /etc/amnezia/amneziawg; chmod 700 /etc/amnezia/amneziawg
+mkdir -p "$VK_CONF_DIR"; chmod 700 "$VK_CONF_DIR"
 { printf '%s\n' "$iface"; [ -n "$peers" ] && { echo; printf '%s\n' "$peers"; }; true; } | put "$conf" 600
-awg-quick strip "$I" >/dev/null 2>"$VK_RUN/strip.err" || die "awg-quick не разобрал конфиг: $(cat "$VK_RUN/strip.err")"
+"$VK_WG_TOOL-quick" strip "$I" >/dev/null 2>"$VK_RUN/strip.err" || die "awg-quick не разобрал конфиг: $(cat "$VK_RUN/strip.err")"
 [ -n "$peers" ] && say "клиентов в конфиге сохранено: $(grep -c '^\[Peer\]' <<<"$peers")"
 
 # --- фаервол и разделение трафика (в каскаде российское метится 0x1 и идёт мимо awg0)
@@ -98,10 +102,13 @@ fi
 printf '# vpnkit client-awg %s\nlisten-address=%s\n' "$I" "$VK_GW" | put "/etc/dnsmasq.d/30-vpnkit-$I.conf" 644
 
 # --- туннель: перезапуск только если изменилась секция [Interface] (клиенты переподключатся сами)
-systemctl enable -q "awg-quick@$I"
-if [ "$old_iface" != "$iface" ] || ! systemctl is-active -q "awg-quick@$I"; then
-  systemctl restart "awg-quick@$I"
+systemctl enable -q "${VK_WG_TOOL}-quick@$I"
+if [ "$old_iface" != "$iface" ] || ! systemctl is-active -q "${VK_WG_TOOL}-quick@$I"; then
+  systemctl restart "${VK_WG_TOOL}-quick@$I"
   say "вход $I поднят/перезапущен"
 fi
 if changed /etc/dnsmasq.d/ || ! systemctl is-active -q dnsmasq; then systemctl restart dnsmasq; fi
+if [ "$VK_MODULE" = client-awg ]; then
+  printf 'IFACE=%s\nENDPOINT=%s\n' "$I" "$VK_CLIENT_ENDPOINT" | put /etc/vpnkit/client-awg.env 600
+fi
 say "вход $I: $VK_GW/$pfx, udp/$VK_PORT, MTU $VK_MTU, MSS $VK_MSS"

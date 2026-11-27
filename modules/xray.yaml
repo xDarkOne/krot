@@ -21,6 +21,7 @@ params:
   type: string
   default: имя узла
   note: подпись входов в приложениях клиентов
+- {name: socks_exit_domains, type: string, note: список доменов через SOCKS5 выхода при включённом exit-socks}
 secrets:
 - '<узел>/xray/*: пути и порты XHTTP и PQ, пара vlessenc'
 - UUID и токены клиентов — /etc/vpnkit/users.json на узле

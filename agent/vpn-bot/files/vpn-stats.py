@@ -17,7 +17,7 @@ DB = "/var/lib/vpnkit/stats.db"
 CONFS = sorted(glob.glob("/etc/amnezia/amneziawg/*.conf"))
 KEEP_DAYS = 90
 XRAY_API = "127.0.0.1:10085"
-XRAY_PROTOCOLS = {"xh-in": "xhttp", "enc-in": "pq", "hy2-in": "hy2"}
+XRAY_PROTOCOLS = {"xh-in": "xhttp", "enc-in": "pq", "hy2-in": "hy2", "hy2v-in": "hy2"}
 
 
 def run(args):
@@ -50,7 +50,7 @@ def collect_xray(db, now):
     instance = invocation()
     if instance is None:
         return
-    rc, out = run(["/usr/local/bin/xray", "api", "statsquery", f"--server={XRAY_API}", "--pattern=inbound>>>"])
+    rc, out = run(["/usr/local/bin/xray", "api", "statsquery", f"--server={XRAY_API}"])
     if rc or invocation() != instance:
         return
     try:
@@ -63,15 +63,30 @@ def collect_xray(db, now):
         tx = counters.get(prefix + "downlink")
         if rx is None or tx is None or min(rx, tx) < 0:
             continue
-        old = db.execute("SELECT instance,rx,tx FROM last_protocol WHERE protocol=?", (protocol,)).fetchone()
+        old = db.execute("SELECT instance,rx,tx FROM last_xray WHERE metric=?", (tag,)).fetchone()
         prx, ptx = old[1:] if old and old[0] == instance else (0, 0)
         drx = rx - prx if rx >= prx else rx
         dtx = tx - ptx if tx >= ptx else tx
         if drx or dtx:
             db.execute("INSERT INTO protocol_traffic(ts,protocol,rx,tx) VALUES(?,?,?,?)", (now, protocol, drx, dtx))
-        db.execute("INSERT INTO last_protocol(protocol,instance,rx,tx) VALUES(?,?,?,?) "
-                   "ON CONFLICT(protocol) DO UPDATE SET instance=excluded.instance,rx=excluded.rx,tx=excluded.tx",
-                   (protocol, instance, rx, tx))
+        db.execute("INSERT INTO last_xray(metric,instance,rx,tx) VALUES(?,?,?,?) "
+                   "ON CONFLICT(metric) DO UPDATE SET instance=excluded.instance,rx=excluded.rx,tx=excluded.tx",
+                   (tag, instance, rx, tx))
+
+    names = {key.split(">>>")[1] for key in counters if key.startswith("user>>>") and key.count(">>>") == 3}
+    for name in names:
+        metric = "user>>>" + name
+        rx = counters.get(metric + ">>>traffic>>>uplink", 0)
+        tx = counters.get(metric + ">>>traffic>>>downlink", 0)
+        if min(rx, tx) < 0:
+            continue
+        previous = db.execute("SELECT instance,rx,tx FROM last_xray WHERE metric=?", (metric,)).fetchone()
+        old_rx, old_tx = previous[1:] if previous and previous[0] == instance else (0, 0)
+        delta_rx, delta_tx = rx - old_rx if rx >= old_rx else rx, tx - old_tx if tx >= old_tx else tx
+        if delta_rx or delta_tx:
+            db.execute("INSERT INTO profile_traffic VALUES (?,?,?,?)", (now, name, delta_rx, delta_tx))
+        db.execute("INSERT INTO last_xray VALUES(?,?,?,?) ON CONFLICT(metric) DO UPDATE SET "
+                   "instance=excluded.instance,rx=excluded.rx,tx=excluded.tx", (metric, instance, rx, tx))
 
 
 def main():
@@ -83,7 +98,9 @@ def main():
     CREATE TABLE IF NOT EXISTS last_peer (peer TEXT PRIMARY KEY, rx INTEGER NOT NULL, tx INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS protocol_traffic (ts INTEGER NOT NULL, protocol TEXT NOT NULL, rx INTEGER NOT NULL, tx INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS protocol_traffic_ts ON protocol_traffic(ts);
-    CREATE TABLE IF NOT EXISTS last_protocol (protocol TEXT PRIMARY KEY, instance TEXT NOT NULL, rx INTEGER NOT NULL, tx INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS last_xray (metric TEXT PRIMARY KEY, instance TEXT NOT NULL, rx INTEGER NOT NULL, tx INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS profile_traffic (ts INTEGER NOT NULL, name TEXT NOT NULL, rx INTEGER NOT NULL, tx INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS profile_traffic_name_ts ON profile_traffic(name,ts);
     """)
     names = peer_names()
     prev = {r[0]: (r[1], r[2]) for r in db.execute("SELECT peer,rx,tx FROM last_peer")}
@@ -110,6 +127,7 @@ def main():
     db.execute("DELETE FROM traffic WHERE ts < ?", (now - KEEP_DAYS * 86400,))
     collect_xray(db, now)
     db.execute("DELETE FROM protocol_traffic WHERE ts < ?", (now - KEEP_DAYS * 86400,))
+    db.execute("DELETE FROM profile_traffic WHERE ts < ?", (now - KEEP_DAYS * 86400,))
     db.commit()
     db.close()
 

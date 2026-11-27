@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Крот · Панель</title>
+<link rel="stylesheet" href="panel.css">
+<script defer src="https://telegram.org/js/telegram-web-app.js"></script>
+<script defer src="panel.js"></script>
+</head>
+<body>
+<main>
+  <h1>Панель Крота</h1>
+  <p id="status" role="status"></p>
+  <form id="create" hidden>
+    <label for="name">Имя нового профиля</label>
+    <label id="awg-choice" hidden><input id="combined" type="checkbox"> Добавить профиль AmneziaWG</label>
+    <div class="row"><input id="name" required maxlength="32" pattern="[A-Za-z0-9.\-][A-Za-z0-9._\-]{0,31}"><button>Создать</button></div>
+  </form>
+  <div id="profiles"></div>
+  <section id="detail" hidden></section>
+</main>
+</body>
+</html>

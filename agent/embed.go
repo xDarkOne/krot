@@ -21,9 +21,19 @@ func Lib() string {
 	return string(b)
 }
 
+// Clients in the WireGuard family share the same lifecycle scripts.
+func scriptDirectory(module string) string {
+	switch module {
+	case "client-awg-legacy", "client-wireguard":
+		return "client-awg"
+	default:
+		return module
+	}
+}
+
 // Step возвращает скрипт шага модуля; ok=false, если шага нет.
 func Step(module, step string) (string, bool) {
-	b, err := fs.ReadFile(files, module+"/"+step+".sh")
+	b, err := fs.ReadFile(files, scriptDirectory(module)+"/"+step+".sh")
 	if err != nil {
 		return "", false
 	}
@@ -68,7 +78,7 @@ func Hash(module, extra string) string {
 	}
 	add("lib.sh")
 	var names []string
-	for _, dir := range []string{module, module + "/files", "common/files"} {
+	for _, dir := range []string{scriptDirectory(module), module + "/files", "common/files"} {
 		ents, _ := fs.ReadDir(files, dir)
 		for _, e := range ents {
 			if !e.IsDir() {
@@ -79,6 +89,9 @@ func Hash(module, extra string) string {
 	sort.Strings(names)
 	for _, n := range names {
 		add(n)
+	}
+	if scriptDirectory(module) != module {
+		fmt.Fprintf(h, "variant\x00%s\x00", module)
 	}
 	fmt.Fprintf(h, "extra\x00%s", extra)
 	return hex.EncodeToString(h.Sum(nil))[:12]

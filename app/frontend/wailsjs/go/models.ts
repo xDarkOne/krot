@@ -344,6 +344,7 @@ export namespace main {
 	export class WCatalogView {
 	    groups: modules.Group[];
 	    modules: ModuleView[];
+	    portable: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new WCatalogView(source);
@@ -352,6 +353,7 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.groups = this.convertValues(source["groups"], modules.Group);
+	        this.portable = source["portable"];
 	        this.modules = this.convertValues(source["modules"], ModuleView);
 	    }
 	
@@ -438,6 +440,11 @@ export namespace main {
 	    exitIPv6: string;
 	    realityServerName: string;
 	    realityPort: string;
+	    portable: boolean;
+	    webName: string;
+	    mtproxyToken: string;
+	    telegramToken: string;
+	    telegramAdmins: string;
 	    choices: Record<string, boolean>;
 	    dir: string;
 	
@@ -457,6 +464,11 @@ export namespace main {
 	        this.exitIPv6 = source["exitIPv6"];
 	        this.realityServerName = source["realityServerName"];
 	        this.realityPort = source["realityPort"];
+	        this.portable = source["portable"];
+	        this.webName = source["webName"];
+	        this.mtproxyToken = source["mtproxyToken"];
+	        this.telegramToken = source["telegramToken"];
+	        this.telegramAdmins = source["telegramAdmins"];
 	        this.choices = source["choices"];
 	        this.dir = source["dir"];
 	    }

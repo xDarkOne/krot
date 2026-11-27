@@ -1,0 +1,33 @@
+name: vk-turn-proxy
+doc: docs/20-server-modules/vk-turn-proxy.md
+roles: [entry]
+topology: [cascade]
+requires: [client-wireguard]
+conflicts: []
+resources: {ram_mb: 70, disk_mb: 550}
+params:
+- {name: port, type: port, default: 56000}
+secrets: [ключ внешнего транспорта создаёт пульт]
+ports:
+- {proto: udp, port: '{port}', expose: true, purpose: VK TURN Proxy}
+nft: {}
+ip_rules: []
+units: [vk-turn-proxy.service]
+files: [/etc/vpnkit/vk-turn.env]
+versions: {}
+health:
+- {cmd: systemctl is-active vk-turn-proxy, expect: active}
+steps:
+  preflight: agent/vk-turn-proxy/preflight.sh
+  install: agent/vk-turn-proxy/install.sh
+  verify: agent/vk-turn-proxy/verify.sh
+  rollback: agent/vk-turn-proxy/rollback.sh
+deadman_sec: 900
+catalog:
+  group: access
+  order: 58
+  default: false
+  place: {cascade: [entry]}
+  title: VK TURN Proxy
+  what: Транспорт к отдельному входу WireGuard
+  why: Для подключения клиенту нужны параметры совместимого VK TURN и профиль WireGuard.

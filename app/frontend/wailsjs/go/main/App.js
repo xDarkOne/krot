@@ -50,6 +50,10 @@ export function Backups(arg1) {
   return window['go']['main']['App']['Backups'](arg1);
 }
 
+export function CreateBackup(arg1) {
+  return window['go']['main']['App']['CreateBackup'](arg1);
+}
+
 export function CheckUpdate() {
   return window['go']['main']['App']['CheckUpdate']();
 }

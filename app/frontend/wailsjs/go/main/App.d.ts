@@ -31,6 +31,8 @@ export function ApplyUpdates():Promise<void>;
 
 export function Backups(arg1:string):Promise<Array<main.BackupFile>>;
 
+export function CreateBackup(arg1:string):Promise<main.BackupReport>;
+
 export function CheckUpdate():Promise<selfupdate.Check>;
 
 export function Clients(arg1:string):Promise<main.ClientList>;

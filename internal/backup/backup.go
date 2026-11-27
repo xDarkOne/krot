@@ -41,9 +41,11 @@ var ByModule = map[string][]string{
 
 const markerDir = "var/lib/vpnkit/modules/"
 
+const latestBackup = "ls -1t /var/backups/vpnkit/*.tar.gz.age 2>/dev/null | head -1"
+
 // Pull забирает самую свежую собственную копию узла в dir; возвращает путь.
 func Pull(ctx context.Context, cl *remote.Client, dir string) (string, error) {
-	r, err := cl.Run(ctx, "ls -1t /var/backups/vpnkit/*.tar.gz.age 2>/dev/null | head -1\n")
+	r, err := cl.Run(ctx, latestBackup+"\n")
 	if err != nil {
 		return "", err
 	}
@@ -51,27 +53,74 @@ func Pull(ctx context.Context, cl *remote.Client, dir string) (string, error) {
 	if src == "" {
 		return "", errors.New("на узле нет копий в /var/backups/vpnkit")
 	}
-	sum, err := cl.Run(ctx, "cat "+strings.TrimSuffix(src, ".tar.gz.age")+".sha256\n")
+	return pullArchive(ctx, cl, dir, src)
+}
+
+const createBackupScript = `set -e
+latest() {
+    file=$(` + latestBackup + `)
+    if [ -n "$file" ]; then stat -c '%n|%i|%y' -- "$file"; fi
+}
+before=$(latest)
+systemctl start vpnkit-backup.service >&2
+after=$(latest)
+# If the service was already finishing an archive, start a new invocation.
+if [ "$before" = "$after" ]; then
+    systemctl start vpnkit-backup.service >&2
+    after=$(latest)
+fi
+if [ -z "$after" ] || [ "$before" = "$after" ]; then
+    echo 'служба не создала новую копию' >&2
+    exit 1
+fi
+printf '%s\n' "${after%%|*}"
+`
+
+// CreateAndPull runs the installed backup service, then downloads the new archive.
+func CreateAndPull(ctx context.Context, cl *remote.Client, dir string) (string, error) {
+	r, err := cl.Run(ctx, createBackupScript)
 	if err != nil {
 		return "", err
+	}
+	if r.Code != 0 {
+		return "", fmt.Errorf("не удалось создать копию на узле: %s", strings.TrimSpace(r.Stderr))
+	}
+	return pullArchive(ctx, cl, dir, strings.TrimSpace(r.Stdout))
+}
+
+func pullArchive(ctx context.Context, cl *remote.Client, dir, src string) (string, error) {
+	name := pathpkg.Base(src)
+	if src != "/var/backups/vpnkit/"+name || !strings.HasSuffix(name, ".tar.gz.age") || strings.ContainsAny(name, "'\\\r\n\x00") {
+		return "", errors.New("узел вернул недопустимый путь к резервной копии")
+	}
+	sum, err := cl.Run(ctx, "cat -- '"+strings.TrimSuffix(src, ".tar.gz.age")+".sha256'\n")
+	if err != nil {
+		return "", err
+	}
+	if sum.Code != 0 {
+		return "", fmt.Errorf("не удалось прочитать контрольную сумму копии: %s", strings.TrimSpace(sum.Stderr))
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	dst := filepath.Join(dir, filepath.Base(src))
-	f, err := os.OpenFile(dst+".part", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	dst := filepath.Join(dir, name)
+	f, err := os.CreateTemp(dir, ".backup-*.part")
 	if err != nil {
 		return "", err
 	}
+	defer os.Remove(f.Name())
 	got, err := cl.Fetch(ctx, src, f)
-	f.Close()
+	closeErr := f.Close()
 	if err != nil {
 		return "", err
+	}
+	if closeErr != nil {
+		return "", closeErr
 	}
 	if want := strings.TrimSpace(sum.Stdout); want != got {
 		return "", fmt.Errorf("sha256 не совпал: на узле %s, получено %s", want, got)
 	}
-	return dst, os.Rename(dst+".part", dst)
+	return dst, os.Rename(f.Name(), dst)
 }
 
 // Report — итог проверки копии.

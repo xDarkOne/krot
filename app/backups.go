@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -55,15 +56,38 @@ func (a *App) Backups(node string) ([]BackupFile, error) {
 
 // PullBackup — забрать свежую копию узла, сверить sha256 и расшифровать ключом пульта.
 func (a *App) PullBackup(node string) (BackupReport, error) {
+	return a.backupReport(node, false)
+}
+
+// CreateBackup starts an on-demand backup, downloads it and checks it locally.
+func (a *App) CreateBackup(node string) (BackupReport, error) {
+	return a.backupReport(node, true)
+}
+
+func (a *App) backupReport(node string, create bool) (BackupReport, error) {
 	n, err := a.node(node)
 	if err != nil {
 		return BackupReport{}, err
+	}
+	if create {
+		a.mu.Lock()
+		if a.updating || a.busy[n.Name] != "" {
+			a.mu.Unlock()
+			return BackupReport{}, fmt.Errorf("дождитесь завершения операции на узле %s", n.Name)
+		}
+		a.busy[n.Name] = "backup"
+		a.mu.Unlock()
+		defer func() { a.mu.Lock(); delete(a.busy, n.Name); a.mu.Unlock() }()
 	}
 	cl, err := remote.Dial(n)
 	if err != nil {
 		return BackupReport{}, err
 	}
-	p, err := backup.Pull(a.ctx, cl, backupDir(n.Name))
+	pull := backup.Pull
+	if create {
+		pull = backup.CreateAndPull
+	}
+	p, err := pull(a.ctx, cl, backupDir(n.Name))
 	cl.Close()
 	if err != nil {
 		return BackupReport{}, err
@@ -72,7 +96,10 @@ func (a *App) PullBackup(node string) (BackupReport, error) {
 	if err != nil {
 		return BackupReport{}, err
 	}
-	i, _ := os.Stat(p)
+	i, err := os.Stat(p)
+	if err != nil {
+		return BackupReport{}, err
+	}
 	return BackupReport{File: BackupFile{Path: p, Name: filepath.Base(p), Size: i.Size(), At: i.ModTime().Format("02.01.2006 15:04")},
 		Files: rep.Files, Modules: rep.Modules, Missing: rep.Missing}, nil
 }

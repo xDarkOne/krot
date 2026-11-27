@@ -3,7 +3,7 @@
 import {
     GetState, PickInventory, Unlock, Status, Clients,
     AddClient, ShowClient, DelClient, OpenClientsFolder, PublishSubAmnezia,
-    Modules, Install, Answer, Backups, PullBackup, RestoreClients,
+    Modules, Install, Answer, Backups, CreateBackup, PullBackup, RestoreClients,
 } from '../wailsjs/go/main/App';
 import {EventsOn} from '../wailsjs/runtime/runtime';
 import {$, closeModal, el, toast, errText} from './util.js';
@@ -185,20 +185,29 @@ function backupsCard(n) {
     const b = backupCache[n.name];
     if (!b) { loadBackups(n.name); }
     const st = b || {};
-    const pull = el('button', {class: 'ghost small', disabled: st.busy ? '' : null}, st.busy ? 'Забираю…' : 'Забрать свежую копию');
-    pull.addEventListener('click', async () => {
-        st.busy = true; backupCache[n.name] = st; renderNode();
+    const saveBackup = async (action, request) => {
+        if (st.busy) return;
+        st.busy = action;
+        delete st.report;
+        backupCache[n.name] = st;
+        renderNode();
         try {
-            const r = await PullBackup(n.name);
+            const r = await request(n.name);
             st.report = r.missing && r.missing.length
                 ? {bad: true, text: `✗ в копии нет ключевых файлов: ${r.missing.join(', ')}`}
                 : {bad: false, text: `✓ ${r.file.name}: расшифрована ключом пульта, ${r.files} файлов, все модули на месте`};
         } catch (e) {
             st.report = {bad: true, text: errText(e)};
+        } finally {
+            st.busy = null;
+            await loadBackups(n.name);
         }
-        st.busy = false;
-        await loadBackups(n.name);
-    });
+    };
+    const disabled = st.busy ? '' : null;
+    const pull = el('button', {class: 'ghost small', disabled, onclick: () => saveBackup('pull', PullBackup)},
+        st.busy === 'pull' ? 'Забираю…' : 'Забрать свежую копию');
+    const create = el('button', {class: 'small', disabled, onclick: () => saveBackup('create', CreateBackup)},
+        st.busy === 'create' ? 'Создаю и скачиваю…' : 'Создать копию сейчас');
     const rows = (st.list || []).slice(0, 5).map((f) => {
         const kids = [el('span', {}, `${f.at} · ${(f.size / 1024).toFixed(0)} КБ`)];
         if (n.role === 'entry' || n.role === 'solo') {
@@ -224,9 +233,9 @@ function backupsCard(n) {
         return el('li', {class: 'brow'}, ...kids);
     });
     return el('div', {class: 'card'},
-        el('h3', {class: 'bar'}, 'Резервные копии', pull),
+        el('h3', {class: 'bar'}, 'Резервные копии', el('div', {class: 'server-info-actions'}, pull, create)),
         st.report ? el('div', {class: st.report.bad ? 'checks bad' : 'checks ok'}, st.report.text) : null,
-        rows.length ? el('ul', {class: 'mods'}, rows) : el('div', {class: 'muted small'}, 'На этом компьютере копий узла пока нет. Сервер делает их сам каждую ночь — заберите свежую.'),
+        rows.length ? el('ul', {class: 'mods'}, rows) : el('div', {class: 'muted small'}, 'На этом компьютере копий узла пока нет.'),
         el('div', {class: 'muted small', style: 'margin-top:8px'}, 'Копии зашифрованы ключом этого компьютера: сервер их делает, но прочитать не может. Восстановление возвращает клиентов подписки и Telegram из копии, а AWG — из хранилища пульта, без перевыдачи.'));
 }
 

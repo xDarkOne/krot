@@ -944,6 +944,9 @@ func printCard(c clients.Card) {
 		fmt.Printf("    профиль: %s.conf, ссылка: %s.vpn.txt, QR: %s.qr.png\n", c.Base, c.Base, c.Base)
 	case "sub":
 		fmt.Printf("    подписка: %s\n    файл: %s.sub.txt, QR: %s.sub.qr.png\n", c.QR, c.Base, c.Base)
+		if c.CompatURL != "" {
+			fmt.Printf("    подписка без AWG: %s\n", c.CompatURL)
+		}
 		if c.AmneziaURL != "" {
 			fmt.Printf("    профиль AmneziaVPN: %s\n", c.AmneziaURL)
 		}

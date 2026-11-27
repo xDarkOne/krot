@@ -146,6 +146,7 @@ export namespace main {
 	}
 	export class CardView {
 	    amnezia_url?: string;
+	    compat_url?: string;
 	    kind: string;
 	    node: string;
 	    name: string;
@@ -174,6 +175,7 @@ export namespace main {
 	        this.base = source["base"];
 	        this.qrImage = source["qrImage"];
 	        this.amnezia_url = source["amnezia_url"];
+	        this.compat_url = source["compat_url"];
 	    }
 	}
 	export class ClientList {

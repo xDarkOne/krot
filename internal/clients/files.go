@@ -24,6 +24,7 @@ type Card struct {
 	Extra      string `json:"extra"` // доп. файл (профиль .conf для AWG), может быть пустым
 	Base       string `json:"base"`  // путь к файлам без расширения (после Save)
 	AmneziaURL string `json:"amnezia_url,omitempty"`
+	CompatURL  string `json:"compat_url,omitempty"`
 }
 
 // Kinds — расширения файлов карточки по виду клиента.
@@ -45,7 +46,19 @@ func AWGCard(node string, p Profile) Card {
 
 // SubCardOf — карточка клиента подписки.
 func SubCardOf(node string, c SubCard) Card {
-	body := "# подписка (Happ, v2rayNG, Hiddify, Streisand, sing-box: «добавить по ссылке»)\n" + c.SubURL +
+	hint := "Happ, v2rayNG, Hiddify, Streisand: «добавить подписку» — QR или ссылка"
+	heading := "# подписка (Happ, v2rayNG, Hiddify, Streisand, sing-box: «добавить по ссылке»)"
+	count := len(c.Links)
+	if c.CompatURL != "" {
+		heading = "# единая подписка INCY для iOS и Android"
+		hint = "INCY для iOS и Android: добавьте единую подписку по QR или ссылке. Для других клиентов доступна ссылка без AWG."
+		count++
+	}
+	body := heading + "\n" + c.SubURL
+	if c.CompatURL != "" {
+		body += "\n\n# подписка без AWG (INCY Desktop, Happ и другие клиенты)\n" + c.CompatURL
+	}
+	body +=
 		"\n\n# отдельные входы — если приложение не берёт подписку\n" + strings.Join(c.Links, "\n") + "\n"
 	if c.Routing["happ"] != "" {
 		body += "\n# правила «российское — напрямую» (открыть на телефоне, приложение добавит их само)\n" +
@@ -58,8 +71,8 @@ func SubCardOf(node string, c SubCard) Card {
 	if qr == "" && len(c.Links) > 0 { // подписка не включена — в QR первая ссылка
 		qr = c.Links[0]
 	}
-	return Card{Kind: "sub", Node: node, Name: c.Name, Title: "Подписка · входов " + strconv.Itoa(len(c.Links)),
-		QR: qr, Body: body, AmneziaURL: c.AmneziaURL, Hint: "Happ, v2rayNG, Hiddify, Streisand: «добавить подписку» — QR или ссылка"}
+	return Card{Kind: "sub", Node: node, Name: c.Name, Title: "Подписка · входов " + strconv.Itoa(count),
+		QR: qr, Body: body, AmneziaURL: c.AmneziaURL, CompatURL: c.CompatURL, Hint: hint}
 }
 
 // TGCardOf — карточка пользователя Telegram-прокси.

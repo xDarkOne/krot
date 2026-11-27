@@ -358,7 +358,7 @@ function clientsCard(node) {
     const kinds = ['sub', 'awg'].filter((kind) => !errors[kind]);
     const feeds = el('div', {class: 'access-formats'},
         el('div', {}, el('strong', {}, 'Подписка'), el('span', {}, 'VLESS XHTTP · VLESS PQ · Hysteria2')),
-        el('div', {}, el('strong', {}, 'AmneziaVPN'), el('span', {}, 'Профиль AWG · HTTPS-загрузка из карточки подписки')));
+        el('div', {}, el('strong', {}, 'AmneziaWG'), el('span', {}, 'В единой подписке для INCY на iOS и Android')));
     const table = el('div', {class: 'access-list'},
         names.length ? el('div', {class: 'access-row access-columns'},
             el('span', {}, 'Устройство'), el('span', {}, 'Подписка'), el('span', {}, 'AmneziaVPN')) : null,
@@ -444,7 +444,7 @@ function showCard(card, fresh) {
         toast('Текст скопирован');
     }}, 'Копировать всё');
     const amnezia = card.kind === 'sub' ? el('button', {class: 'ghost'},
-        card.amnezia_url ? 'Отозвать ссылку AmneziaVPN' : 'Опубликовать профиль AmneziaVPN') : null;
+        card.amnezia_url ? 'Убрать AmneziaWG из подписки' : 'Добавить AmneziaWG в подписку') : null;
     if (amnezia) {
         amnezia.addEventListener('click', async () => {
             const publish = !card.amnezia_url;
@@ -462,6 +462,10 @@ function showCard(card, fresh) {
         await navigator.clipboard.writeText(card.amnezia_url);
         toast('Ссылка AmneziaVPN скопирована');
     }}, 'Копировать ссылку AmneziaVPN') : null;
+    const copyCompat = card.compat_url ? el('button', {class: 'ghost', onclick: async () => {
+        await navigator.clipboard.writeText(card.compat_url);
+        toast('Ссылка без AWG скопирована');
+    }}, 'Копировать подписку без AWG') : null;
     const del = el('button', {class: 'danger'}, 'Удалить клиента');
     let armed = false;
     del.addEventListener('click', async () => {
@@ -491,8 +495,10 @@ function showCard(card, fresh) {
             el('pre', {}, card.body),
             el('div', {class: 'row'}, copy, copyAll, el('button', {class: 'ghost', onclick: () => OpenClientsFolder(card.node)}, 'Папка с файлами')),
             card.kind === 'sub' ? el('div', {},
-                el('div', {class: 'row'}, amnezia, copyAmnezia),
-                el('div', {class: 'muted'}, 'Публикуется одноимённый профиль AmneziaWG. Один профиль на устройство.')) : null,
+                el('div', {class: 'row'}, amnezia, copyCompat, copyAmnezia),
+                el('div', {class: 'muted'}, card.compat_url
+                    ? 'Удаление AWG отзывает единую ссылку и файл AmneziaVPN. Подписка без AWG продолжит работать.'
+                    : 'Добавляется одноимённый профиль AmneziaWG. Один профиль на устройство.')) : null,
             el('div', {class: 'warnline'}, 'Ссылка и QR — пропуск. Передавайте только самому человеку.'),
             el('div', {class: 'row', style: 'margin-top:18px'}, del))));
     $('modal').hidden = false;

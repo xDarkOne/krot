@@ -127,7 +127,10 @@ def card_text(name):
         return out, None
     c = json.loads(out)
     lines = [f"Клиент {name}"]
-    if c.get("sub_url"):
+    if c.get("compat_url"):
+        lines += ["", "Единая подписка INCY (iOS и Android):", c["sub_url"],
+                  "", "Подписка без AWG:", c["compat_url"]]
+    elif c.get("sub_url"):
         lines += ["", "Подписка (Happ, v2rayNG, Hiddify):", c["sub_url"]]
     for k, v in (c.get("routing") or {}).items():
         lines.append(f"Маршруты {k}: {v}")

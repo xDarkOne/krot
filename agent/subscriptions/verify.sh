@@ -13,6 +13,13 @@ for t in $(python3 -c 'import json;[print(c["amnezia"]["token"]) for c in json.l
     || die "профиль AmneziaVPN недоступен"
   case "$profile" in vpn://?*) ;; *) die "неверный ответ для профиля AmneziaVPN" ;; esac
 done
+for t in $(python3 -c 'import json;[print(c["amnezia"]["feed_token"]) for c in json.load(open("/etc/vpnkit/users.json"))["clients"].values() if c.get("amnezia", {}).get("feed_token")]'); do
+  body=$(curl -fsS -m 10 --resolve "$VK_SUB_NAME:$port:127.0.0.1" "https://$VK_SUB_NAME/u/$t") \
+    || die "единая подписка INCY недоступна"
+  decoded=$(base64 -d <<<"$body") || die "некорректный формат единой подписки INCY"
+  [ "$(grep -c '^amneziawg://' <<<"$decoded")" = 1 ] || die "в единой подписке отсутствует профиль AmneziaWG"
+  [ "$(grep -c '^vless://' <<<"$decoded")" -ge 2 ] || die "в единой подписке отсутствуют входы VLESS"
+done
 c=$(curl -s -m 10 -o /dev/null -w '%{http_code}' --resolve "$VK_SUB_NAME:$port:127.0.0.1" "https://$VK_SUB_NAME/u/$(head -c16 /dev/urandom | xxd -p)")
 [ "$c" = 404 ] || die "чужой токен отвечает $c, а не 404"
 r=""

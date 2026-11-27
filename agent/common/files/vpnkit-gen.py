@@ -31,6 +31,7 @@ import secrets
 import subprocess
 import sys
 import uuid
+import zlib
 from urllib.parse import quote
 
 ETC = "/etc/vpnkit"
@@ -218,6 +219,33 @@ def links(name, c, u, x, h):
     return out
 
 
+def amnezia_share_link(name, profile):
+    """Convert Krot's exported vpn:// profile to INCY's mixed-feed entry."""
+    link = profile["link"]
+    if not re.fullmatch(r"vpn://[A-Za-z0-9_-]{1,16377}", link):
+        return None
+    try:
+        payload = link[6:]
+        packet = base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4))
+        size = int.from_bytes(packet[:4], "big")
+        if not 0 < size <= 65536:
+            return None
+        decoder = zlib.decompressobj()
+        raw = decoder.decompress(packet[4:], size + 1)
+        if len(raw) != size or not decoder.eof or decoder.unused_data:
+            return None
+        for container in json.loads(raw)["containers"]:
+            if container.get("container") != "amnezia-awg2":
+                continue
+            conf = json.loads(container["awg"]["last_config"])["config"]
+            if isinstance(conf, str) and "[Interface]" in conf and "[Peer]" in conf:
+                encoded = base64.urlsafe_b64encode(conf.encode()).decode().rstrip("=")
+                return f"amneziawg://{encoded}#{quote(name + ' · AmneziaWG', safe='')}"
+    except (ValueError, TypeError, KeyError, AttributeError, zlib.error):
+        pass
+    return None
+
+
 def subs(u, x, h, s):
     outdir = s["OUTDIR"]
     os.makedirs(outdir, exist_ok=True)
@@ -225,9 +253,24 @@ def subs(u, x, h, s):
     # и тогда nginx (www-data) не прочтёт подписку — 403 вместо 200
     os.chmod(outdir, 0o755)
     os.chmod(os.path.dirname(outdir), 0o755)
+    combined = {}
+    changed = False
+    for name, c in u["clients"].items():
+        profile = c.get("amnezia")
+        if not profile:
+            continue
+        awg = amnezia_share_link(name, profile)
+        if awg:
+            if not profile.get("feed_token"):
+                profile["feed_token"] = secrets.token_hex(16)
+                changed = True
+            combined[name] = awg
+    if changed:
+        save_users(u)
     want = set()
     for n, c in sorted(u["clients"].items()):
-        body = base64.b64encode("\n".join(links(n, c, u, x, h)).encode()).decode()
+        proxy_links = links(n, c, u, x, h)
+        body = base64.b64encode("\n".join(proxy_links).encode()).decode()
         path = os.path.join(outdir, c["token"])
         if not os.path.exists(path) or open(path).read() != body:
             with open(os.open(path + ".new", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644), "w") as f:
@@ -240,12 +283,17 @@ def subs(u, x, h, s):
             filename = profile["token"] + ".vpnuri"
             write_if_changed(os.path.join(outdir, filename), profile["link"] + "\n", 0o640, group="www-data")
             want.add(filename)
+        if n in combined:
+            token = profile["feed_token"]
+            unified = base64.b64encode("\n".join(proxy_links + [combined[n]]).encode()).decode()
+            write_if_changed(os.path.join(outdir, token), unified, 0o640, group="www-data")
+            want.add(token)
     # подписки удалённых клиентов не должны отвечать; в каталоге только наши файлы
     gone = 0
     for f in set(os.listdir(outdir)) - want:
         os.unlink(os.path.join(outdir, f))
         gone += 1
-    return len(want), gone
+    return len(u["clients"]), gone
 
 
 STREAM_CONF = "/etc/nginx/stream.d/vpnkit-443.conf"
@@ -540,9 +588,15 @@ def card(name, u):
     c = u["clients"][name]
     out = {"name": name, "links": links(name, c, u, x, h)}
     if s:
-        out["sub_url"] = f"https://{s['SUB_NAME']}/u/{c['token']}"
-        if c.get("amnezia"):
-            out["amnezia_url"] = f"https://{s['SUB_NAME']}/u/{c['amnezia']['token']}.vpnuri"
+        prefix = f"https://{s['SUB_NAME']}/u/"
+        out["sub_url"] = prefix + c["token"]
+        profile = c.get("amnezia")
+        if profile:
+            out["amnezia_url"] = prefix + profile["token"] + ".vpnuri"
+            token = profile.get("feed_token")
+            if token and amnezia_share_link(name, profile) and os.path.isfile(os.path.join(s["OUTDIR"], token)):
+                out["compat_url"] = out["sub_url"]
+                out["sub_url"] = prefix + token
         if s.get("ROUTING", "1") == "1":
             out["routing"] = {"happ": f"https://{s['SUB_NAME']}/h", "incy": f"https://{s['SUB_NAME']}/i"}
     return out
@@ -576,12 +630,14 @@ def tg_mtproxyl(cmd, a):
         print(json.dumps(mtproxyl_link(name), ensure_ascii=False))
 
 
-def remove_amnezia_file(profile, s):
+def remove_amnezia_files(profile, s):
     if profile and s:
-        try:
-            os.unlink(os.path.join(s["OUTDIR"], profile["token"] + ".vpnuri"))
-        except FileNotFoundError:
-            pass
+        for filename in (profile["token"] + ".vpnuri", profile.get("feed_token")):
+            if filename:
+                try:
+                    os.unlink(os.path.join(s["OUTDIR"], filename))
+                except FileNotFoundError:
+                    pass
 
 
 def publish_amnezia(cmd, name, u):
@@ -591,14 +647,14 @@ def publish_amnezia(cmd, name, u):
     c = u["clients"][name]
     if cmd == "amnezia-publish":
         link = sys.stdin.read(16385).strip()
-        if not re.fullmatch(r"vpn://[A-Za-z0-9_-]{1,16377}", link):
-            sys.exit("ожидалась ссылка AmneziaVPN vpn://")
-        token = c.get("amnezia", {}).get("token") or secrets.token_hex(16)
-        c["amnezia"] = {"token": token, "link": link}
+        if not amnezia_share_link(name, {"link": link}):
+            sys.exit("ожидалась ссылка vpn:// с профилем AmneziaWG от Крота")
+        profile = c.setdefault("amnezia", {"token": secrets.token_hex(16)})
+        profile["link"] = link
         save_users(u)
         subs(u, env("xray"), env("hy2"), s)
     else:
-        remove_amnezia_file(c.pop("amnezia", None), s)
+        remove_amnezia_files(c.pop("amnezia", None), s)
         save_users(u)
     print(json.dumps(card(name, u), ensure_ascii=False))
 
@@ -660,7 +716,7 @@ def main():
         if name not in u[reg]:
             sys.exit(f"клиента {name} нет")
         if not tg:
-            remove_amnezia_file(u[reg][name].get("amnezia"), env("sub"))
+            remove_amnezia_files(u[reg][name].get("amnezia"), env("sub"))
         del u[reg][name]
         save_users(u)
         build(quiet=True)

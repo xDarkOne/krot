@@ -18,6 +18,7 @@ type SubCard struct {
 	SubURL     string   `json:"sub_url"`
 	Links      []string `json:"links"`
 	AmneziaURL string   `json:"amnezia_url"`
+	CompatURL  string   `json:"compat_url"`
 	// Routing — ссылки на правила маршрутизации для приложений: "happ", "incy" → https://…/h, /i
 	Routing map[string]string `json:"routing"`
 }

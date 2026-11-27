@@ -394,7 +394,7 @@ function clientsCard(node) {
     if (c.combined && c.delivery && kinds.length === 2) kinds.unshift('combined');
     const feeds = el('div', {class: 'access-formats'},
         el('div', {}, el('strong', {}, 'Подписка'), el('span', {}, 'VLESS XHTTP · VLESS PQ · Hysteria2')),
-        el('div', {}, el('strong', {}, 'AmneziaWG'), el('span', {}, 'В единой подписке для INCY на iOS и Android')));
+        el('div', {}, el('strong', {}, 'AmneziaWG'), el('span', {}, 'В единой подписке для INCY')));
     const table = el('div', {class: 'access-list'},
         names.length ? el('div', {class: 'access-row access-columns'},
             el('span', {}, 'Устройство'), el('span', {}, 'Подписка'), el('span', {}, 'AmneziaVPN')) : null,

@@ -50,13 +50,13 @@ func SubCardOf(node string, c SubCard) Card {
 	heading := "# подписка (Happ, v2rayNG, Hiddify, Streisand, sing-box: «добавить по ссылке»)"
 	count := len(c.Links)
 	if c.CompatURL != "" {
-		heading = "# единая подписка INCY для iOS и Android"
-		hint = "INCY для iOS и Android: добавьте единую подписку по QR или ссылке. Для других клиентов доступна ссылка без AWG."
+		heading = "# единая подписка INCY с AmneziaWG"
+		hint = "Добавьте единую подписку в INCY по QR или ссылке. Для версий без поддержки AWG доступна отдельная ссылка."
 		count++
 	}
 	body := heading + "\n" + c.SubURL
 	if c.CompatURL != "" {
-		body += "\n\n# подписка без AWG (INCY Desktop, Happ и другие клиенты)\n" + c.CompatURL
+		body += "\n\n# подписка без AWG (Happ и другие клиенты)\n" + c.CompatURL
 	}
 	body +=
 		"\n\n# отдельные входы — если приложение не берёт подписку\n" + strings.Join(c.Links, "\n") + "\n"

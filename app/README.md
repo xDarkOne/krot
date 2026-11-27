@@ -54,6 +54,20 @@ wails dev            # живая перезагрузка при правке
 
 ## Для проверки интерфейса
 
+Автоматические тесты запускаются из корня репозитория.
+
+```sh
+cd app/frontend
+npm ci
+npm run build
+npx playwright install chromium
+npm test
+cd ../..
+go test ./app
+```
+
+На Linux для тестов Go нужны GTK3 и WebKitGTK 4.1, а команда запуска — `go test -tags webkit2_41 ./app`. Если Chromium не хватает системных библиотек, установите его командой `npx playwright install --with-deps chromium`. Тесты Playwright открывают собранный интерфейс и подменяют вызовы Wails. Для них не нужны серверы, учётные данные или запущенное окно Крот. GitHub Actions запускает оба набора при отправке изменений в `main` и при открытии или обновлении pull request.
+
 Интерфейс проверяется без мыши через `KROT_APP_OPEN`:
 - `<узел>/<awg|sub|tg>/<имя>` — открыть карточку клиента;
 - `install:<узел>/<модуль>` — переустановить модуль;

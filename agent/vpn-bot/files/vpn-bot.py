@@ -30,7 +30,8 @@ GEN = "/usr/local/sbin/vpnkit-gen.py"
 STATS_DB = "/var/lib/vpnkit/stats.db"
 FONT_DIR = "/usr/share/fonts/truetype/dejavu"
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,32}$")
-UNITS = ["xray", "hysteria2", "sing-box", "nginx", "dnsmasq", "warp-ru", "telemt", "mtproxyl",
+UNITS = ["xray.service", "sing-box.service", "nginx.service", "dnsmasq.service", "warp-ru.service",
+         "telemt.service", "mtproxyl-telemt.service",
          "traffic-guard.timer", "vpnkit-watch.timer", "vpnkit-backup.timer"]
 PERIODS = {1: "Сутки", 7: "Неделя", 30: "Месяц"}
 PROTOCOLS = {
@@ -38,6 +39,14 @@ PROTOCOLS = {
     "xhttp": ("VLESS XHTTP", "#46c6a4"),
     "pq": ("VLESS PQ", "#f1ad49"),
     "hy2": ("Hysteria2", "#e66a9e"),
+}
+BACKGROUND, WHITE, MUTED, PANEL = "#16212b", "#f0f5fa", "#a2b4c6", "#22313f"
+HEALTH = {
+    "active": ("Работает", "#68d5b3"),
+    "inactive": ("Остановлен", "#ff9caa"),
+    "partial": ("Частично", "#f1ad49"),
+    "missing": ("Не установлен", MUTED),
+    "unknown": ("Нет данных", "#f1ad49"),
 }
 
 
@@ -62,7 +71,7 @@ def api(method, png=None, **params):
         boundary = uuid.uuid4().hex
         parts = [f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'.encode()
                  for key, value in fields.items()]
-        parts += [f'--{boundary}\r\nContent-Disposition: form-data; name="snapshot"; filename="traffic.png"\r\n'
+        parts += [f'--{boundary}\r\nContent-Disposition: form-data; name="snapshot"; filename="dashboard.png"\r\n'
                   'Content-Type: image/png\r\n\r\n'.encode(), png, f'\r\n--{boundary}--\r\n'.encode()]
         data = b"".join(parts)
         headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
@@ -79,29 +88,86 @@ def run(cmd, timeout=30):
         return 1, str(e)
 
 
-def unit_ok(u):
-    if run(["systemctl", "is-enabled", u])[0]:
-        return None  # не установлен
-    return run(["systemctl", "is-active", u])[0] == 0
+def unit_states():
+    _, out = run(["systemctl", "show", "--property=Id,LoadState,ActiveState", *UNITS])
+    states = dict.fromkeys(UNITS, "unknown")
+    for block in out.split("\n\n"):
+        fields = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
+        name, load, active = fields.get("Id"), fields.get("LoadState"), fields.get("ActiveState")
+        if name not in states:
+            continue
+        if load == "not-found":
+            states[name] = "missing"
+        elif active == "active":
+            states[name] = "active"
+        elif active in {"inactive", "failed"}:
+            states[name] = "inactive"
+    return states
 
 
-def status_text():
-    la = open("/proc/loadavg").read().split()[0]
-    mem = {l.split(":")[0]: int(l.split()[1]) for l in open("/proc/meminfo")}
+def status_snapshot():
+    with open("/proc/loadavg") as file:
+        load = file.read().split()[0]
+    with open("/proc/meminfo") as file:
+        mem = {line.split(":")[0]: int(line.split()[1]) for line in file}
+    with open("/proc/uptime") as file:
+        uptime = int(float(file.read().split()[0]) // 60)
+    disk = shutil.disk_usage("/")
     used = (mem["MemTotal"] - mem["MemAvailable"]) // 1024
-    du = shutil.disk_usage("/")
-    up = int(float(open("/proc/uptime").read().split()[0]) // 3600)
-    lines = [f"Нагрузка {la}, память {used}/{mem['MemTotal'] // 1024} МБ, диск {du.used * 100 // du.total}%, "
-             f"работает {up // 24} д {up % 24} ч", ""]
-    for u in UNITS:
-        s = unit_ok(u)
-        if s is not None:
-            lines.append(("✅ " if s else "❌ ") + u)
-    for c in sorted(glob.glob("/etc/amnezia/amneziawg/*.conf")):
-        i = os.path.basename(c)[:-5]
-        rc, out = run(["awg", "show", i, "latest-handshakes"])
-        n = len([l for l in out.splitlines() if l.split("\t")[-1:] != ["0"]]) if rc == 0 else 0
-        lines.append(f"{'✅' if rc == 0 else '❌'} {i}: активных пиров {n}")
+    metrics = [(f"{uptime // 1440} д {uptime // 60 % 24} ч" if uptime >= 1440
+                else f"{uptime // 60} ч {uptime % 60} мин", "Время работы"),
+               (load, "Нагрузка за 1 минуту"), (f"{used} / {mem['MemTotal'] // 1024} МБ", "Память"),
+               (f"{disk.used * 100 // disk.total}%", "Диск")]
+    services = unit_states()
+    interfaces = {}
+    now = int(time.time())
+    for path in sorted(glob.glob("/etc/amnezia/amneziawg/*.conf")):
+        name = os.path.basename(path)[:-5]
+        client = name not in {"awg0", "awgw"}
+        if not client:
+            try:
+                with open(path) as config:
+                    client = config.readline().startswith("# vpnkit client-awg ")
+            except OSError:
+                pass
+        rc, out = run(["awg", "show", name, "latest-handshakes"])
+        times = [line.split("\t")[-1] for line in out.splitlines()]
+        recent = sum(stamp.isdecimal() and 0 <= now - int(stamp) <= 180 for stamp in times) if rc == 0 else 0
+        interfaces[name] = ("active" if rc == 0 else "inactive", recent, client)
+    return metrics, services, interfaces
+
+
+def protocol_states(services, interfaces):
+    awg = {state for state, _, client in interfaces.values() if client}
+    awg_state = "partial" if len(awg) > 1 else next(iter(awg), "missing")
+    xray, nginx, sing_box = (services[name] for name in ("xray.service", "nginx.service", "sing-box.service"))
+
+    def with_dependency(primary, dependency):
+        if primary != "active" or dependency == "active":
+            return primary
+        return "unknown" if dependency == "unknown" else "inactive"
+
+    proxy = [services[name] for name in ("mtproxyl-telemt.service", "telemt.service")]
+    proxy_state = next((state for state in ("active", "inactive", "unknown") if state in proxy), "missing")
+    return [
+        (*PROTOCOLS["awg"], awg_state),
+        (*PROTOCOLS["xhttp"], with_dependency(xray, nginx)),
+        (*PROTOCOLS["pq"], xray),
+        (*PROTOCOLS["hy2"], with_dependency(sing_box, xray)),
+        ("Прокси Telegram", "#5ac5ed", proxy_state),
+    ]
+
+
+def status_text(metrics, services, interfaces):
+    lines = [f"{label}: {value}" for value, label in metrics]
+    lines += ["", "Службы"]
+    lines += [f"{name.removesuffix('.service')}: {HEALTH[state][0]}"
+              for name, state in services.items() if state != "missing"]
+    if interfaces:
+        lines += ["", "Интерфейсы AmneziaWG"]
+        for name, (state, recent, _) in interfaces.items():
+            handshakes = f" · пиров с рукопожатием за 3 мин: {recent}" if state == "active" else ""
+            lines.append(f"{name}: {HEALTH[state][0]}{handshakes}")
     return "\n".join(lines)
 
 
@@ -179,33 +245,64 @@ def stats_text(days):
     return "\n".join(lines)
 
 
-def traffic_card(days, labels, bins, active, registered):
-    image = Image.new("RGB", (760, 654), "#16212b")
+def dashboard_canvas(height):
+    image = Image.new("RGB", (760, height), BACKGROUND)
     draw = ImageDraw.Draw(image)
-    white, muted, panel = "#f0f5fa", "#a2b4c6", "#22313f"
-    selected = "#356a9e"
 
-    def text(x, y, value, size, color=white, bold=False, anchor="lt"):
+    def text(x, y, value, size, color=WHITE, bold=False, anchor="lt"):
         suffix = "-Bold" if bold else ""
         font = ImageFont.truetype(f"{FONT_DIR}/DejaVuSans{suffix}.ttf", size)
         draw.text((x, y), value, fill=color, font=font, anchor=anchor)
 
-    def box(x, y, width, height, color=panel, radius=18):
+    def box(x, y, width, height, color=PANEL, radius=18):
         draw.rounded_rectangle((x, y, x + width, y + height), radius, fill=color)
 
+    return image, draw, text, box
+
+
+def as_png(image):
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def status_card(metrics, protocols):
+    image, draw, text, box = dashboard_canvas(600)
+    text(28, 28, "Крот · Состояние", 36, bold=True)
+    for index, (value, label) in enumerate(metrics):
+        x, y = 28 + (index % 2) * 359, 86 + (index // 2) * 103
+        box(x, y, 345, 90)
+        text(x + 20, y + 14, value, 32, bold=True)
+        text(x + 20, y + 56, label, 20, MUTED)
+    text(28, 312, "ПРОТОКОЛЫ И ПРОКСИ", 21, MUTED, True)
+    box(28, 350, 704, 222)
+    for index, (label, color, state) in enumerate(protocols):
+        y = 350 + index * 44
+        if index:
+            draw.line((47, y, 713, y), fill="#344451")
+        box(48, y + 16, 12, 12, color, 4)
+        text(73, y + 22, label, 22, anchor="lm")
+        message, state_color = HEALTH[state]
+        text(711, y + 22, message, 20, state_color, anchor="rm")
+    return as_png(image)
+
+
+def traffic_card(days, labels, bins, active, registered):
+    image, draw, text, box = dashboard_canvas(654)
+    selected = "#356a9e"
     totals = {protocol: sum(values.get(protocol, 0) for values in bins) for protocol in PROTOCOLS}
     text(28, 28, "Крот · Трафик", 36, bold=True)
     for index, (period, label) in enumerate(PERIODS.items()):
         x = 28 + 238 * index
-        box(x, 86, 228, 48, selected if days == period else panel, 13)
+        box(x, 86, 228, 48, selected if days == period else PANEL, 13)
         text(x + 114, 110, label, 23, anchor="mm")
     box(28, 154, 345, 103)
     box(387, 154, 345, 103)
     text(48, 174, fmt_bytes(sum(totals.values())), 37, bold=True)
-    text(48, 223, "Трафик за период", 20, muted)
+    text(48, 223, "Трафик за период", 20, MUTED)
     text(407, 174, f"{active} из {registered}", 37, bold=True)
-    text(407, 223, "Профили AWG с трафиком", 20, muted)
-    text(28, 287, "ТРАФИК ПО ЧАСАМ" if days == 1 else "ТРАФИК ПО ДНЯМ", 21, muted, True)
+    text(407, 223, "Профили AWG с трафиком", 20, MUTED)
+    text(28, 287, "ТРАФИК ПО ЧАСАМ" if days == 1 else "ТРАФИК ПО ДНЯМ", 21, MUTED, True)
     box(28, 325, 704, 225)
     left, right, baseline = 52, 708, 508
     step = (right - left) / len(bins)
@@ -228,17 +325,15 @@ def traffic_card(days, labels, bins, active, registered):
                     box(x, baseline - top, width, top - bottom, color, min(5, (top - bottom) // 2))
                 bottom = top
     else:
-        text(380, 421, "За этот период трафика нет", 24, muted, anchor="mm")
+        text(380, 421, "За этот период трафика нет", 24, MUTED, anchor="mm")
     for i in sorted({round(i * (len(labels) - 1) / 4) for i in range(5)}):
         x = max(58, min(702, left + (i + 0.5) * step))
-        text(x, 524, labels[i], 16, muted, anchor="mt")
+        text(x, 524, labels[i], 16, MUTED, anchor="mt")
     for index, (protocol, (label, color)) in enumerate(PROTOCOLS.items()):
         x, y = 28 + (index % 2) * 359, 575 + (index // 2) * 37
         box(x, y, 15, 15, color, 4)
         text(x + 27, y - 4, f"{label}  {fmt_bytes(totals[protocol])}", 21)
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    return buffer.getvalue()
+    return as_png(image)
 
 
 def card_text(name):
@@ -270,6 +365,8 @@ def menu(section=None, days=7):
         rows = [[button(label, f"st:{period}", "primary" if days == period else None)
                  for period, label in PERIODS.items()],
                 [button("↻ Обновить", f"st:{days}"), button("Профили AWG", f"sd:{days}")]]
+    elif section == "status":
+        rows = [[button("↻ Обновить", "status"), button("Подробности", "status:details")]]
     return {"inline_keyboard": rows + [nav]}
 
 
@@ -290,20 +387,7 @@ def send(chat, text, kb=None):
     api("sendMessage", **p)
 
 
-def show_traffic(chat, days, message=None):
-    try:
-        labels, bins, peers = traffic(days)
-        registered = awg_peers().keys()
-        active = len(registered & peers.keys())
-        png = traffic_card(days, labels, bins, active, len(registered))
-    except (sqlite3.Error, OSError):
-        send(chat, "Не удалось загрузить статистику трафика.", menu("traffic", days))
-        return
-    totals = {protocol: sum(values.get(protocol, 0) for values in bins) for protocol in PROTOCOLS}
-    caption = (f"Трафик · {PERIODS[days]}\n"
-               f"Всего: {fmt_bytes(sum(totals.values()))} · Профили AWG: {active} из {len(registered)}\n"
-               + "\n".join(f"{label}: {fmt_bytes(totals[key])}" for key, (label, _) in PROTOCOLS.items()))
-    keyboard = menu("traffic", days)
+def send_dashboard(chat, png, caption, keyboard, message):
     if message and message.get("photo"):
         try:
             api("editMessageMedia", png=png, chat_id=chat, message_id=message["message_id"],
@@ -317,6 +401,43 @@ def show_traffic(chat, days, message=None):
     api("sendPhoto", png=png, chat_id=chat, photo="attach://snapshot", caption=caption, reply_markup=keyboard)
 
 
+def show_traffic(chat, days, message=None):
+    try:
+        labels, bins, peers = traffic(days)
+        registered = awg_peers().keys()
+        active = len(registered & peers.keys())
+        png = traffic_card(days, labels, bins, active, len(registered))
+    except (sqlite3.Error, OSError):
+        send(chat, "Не удалось загрузить статистику трафика.", menu("traffic", days))
+        return
+    totals = {protocol: sum(values.get(protocol, 0) for values in bins) for protocol in PROTOCOLS}
+    caption = (f"Трафик · {PERIODS[days]}\n"
+               f"Всего: {fmt_bytes(sum(totals.values()))} · Профили AWG: {active} из {len(registered)}\n"
+               + "\n".join(f"{label}: {fmt_bytes(totals[key])}" for key, (label, _) in PROTOCOLS.items()))
+    send_dashboard(chat, png, caption, menu("traffic", days), message)
+
+
+def show_status(chat, message=None, details=False):
+    keyboard = menu("status")
+    try:
+        metrics, services, interfaces = status_snapshot()
+    except (OSError, ValueError, KeyError):
+        send(chat, "Не удалось прочитать состояние узла.", keyboard)
+        return
+    if details:
+        send(chat, status_text(metrics, services, interfaces), keyboard)
+        return
+    protocols = protocol_states(services, interfaces)
+    try:
+        png = status_card(metrics, protocols)
+    except OSError:
+        send(chat, status_text(metrics, services, interfaces), keyboard)
+        return
+    caption = "\n".join(["Состояние служб на узле", *(f"{label}: {value}" for value, label in metrics),
+                         *(f"{label}: {HEALTH[state][0]}" for label, _, state in protocols)])
+    send_dashboard(chat, png, caption, keyboard, message)
+
+
 def on_callback(cb):
     chat = cb["message"]["chat"]["id"]
     data = cb["data"]
@@ -324,7 +445,9 @@ def on_callback(cb):
     if data == "main":
         send(chat, "Крот: что показать?", menu())
     elif data == "status":
-        send(chat, status_text(), menu("status"))
+        show_status(chat, cb["message"])
+    elif data == "status:details":
+        show_status(chat, details=True)
     elif data == "clients":
         send(chat, *clients_view())
     elif data in {f"st:{period}" for period in PERIODS}:
@@ -364,7 +487,7 @@ def on_message(m):
             card, _ = card_text(text)
             send(chat, "Готово.\n\n" + card, menu())
     elif text.startswith("/status"):
-        send(chat, status_text(), menu("status"))
+        show_status(chat)
     elif text.startswith("/clients"):
         send(chat, *clients_view())
     elif text.startswith("/stats"):

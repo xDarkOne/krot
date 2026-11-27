@@ -22,13 +22,28 @@ params:
   type: port
   default: случайный 20000–60000
   note: задаётся у выхода
+- name: exit_ipv6
+  type: string
+  note: глобальный IPv6 выхода для резервного транспорта AWG
+- name: reality_server_name
+  type: string
+  note: имя внешнего TLS-сайта, включает отдельный TCP-резерв
+- name: reality_port
+  type: port
+  default: 24443
+  note: TCP-порт на выходе при включённом резерве
 secrets:
 - '<выход>/cascade-awg0/*: ключи обоих концов, PSK, HeaderProtectionKey, обфускация, порт'
+- '<выход>/cascade-awg0/reality_*: ключ, UUID и short ID для TCP-резерва'
 ports:
 - proto: udp
   port: '{exit_port}'
   expose: true
   purpose: awg0 на exit
+- proto: tcp
+  port: '{reality_port}'
+  expose: true
+  purpose: Xray Reality на exit, если настроен TCP-резерв
 nft:
   exit:
   - forward awg0 -> !awg0 accept
@@ -40,9 +55,13 @@ ip_rules:
   rule: fwmark 0x3 table 200
 units:
 - awg-quick@awg0.service
+- vpnkit-cascade-watch.service
+- vpnkit-cascade-xray.service
+- vpnkit-cascade-tun.service
 files:
 - /etc/amnezia/amneziawg/awg0.conf
 - /etc/nftables.d/20-vpnkit-cascade.nft
+- /etc/vpnkit/cascade/
 versions: {}
 health:
 - node: entry
@@ -63,6 +82,7 @@ steps:
   update: agent/cascade-awg0/update.sh
   rollback: agent/cascade-awg0/rollback.sh
   uninstall: agent/cascade-awg0/uninstall.sh
+deadman_sec: 300
 catalog:
   group: cascade
   order: 30

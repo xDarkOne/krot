@@ -435,6 +435,9 @@ export namespace main {
 	    tunnelName: string;
 	    subName: string;
 	    exitName: string;
+	    exitIPv6: string;
+	    realityServerName: string;
+	    realityPort: string;
 	    choices: Record<string, boolean>;
 	    dir: string;
 	
@@ -451,6 +454,9 @@ export namespace main {
 	        this.tunnelName = source["tunnelName"];
 	        this.subName = source["subName"];
 	        this.exitName = source["exitName"];
+	        this.exitIPv6 = source["exitIPv6"];
+	        this.realityServerName = source["realityServerName"];
+	        this.realityPort = source["realityPort"];
 	        this.choices = source["choices"];
 	        this.dir = source["dir"];
 	    }

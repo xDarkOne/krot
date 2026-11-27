@@ -113,6 +113,9 @@ func prepareCascade(inv *inventory.Inventory, n *inventory.Node, p map[string]st
 	exitIP := net.IPv4(base[0], base[1], base[2], base[3]+1).String()
 	entryIP := net.IPv4(base[0], base[1], base[2], base[3]+2).String()
 	ones, _ := ipnet.Mask.Size()
+	if ones > 30 {
+		return nil, fmt.Errorf("tunnel_net %q: нужны два адреса узлов", tunNet)
+	}
 
 	ns := exit.Name + "/cascade-awg0/"
 	changed := false
@@ -163,11 +166,6 @@ func prepareCascade(inv *inventory.Inventory, n *inventory.Node, p map[string]st
 	if err := obfs.Valid(); err != nil {
 		return nil, fmt.Errorf("обфускация каскада недопустима: %w", err)
 	}
-	if changed {
-		if err := sec.Save(); err != nil {
-			return nil, fmt.Errorf("сохранить секреты каскада: %w", err)
-		}
-	}
 	exitPub, err := awgkeys.PublicOf(exitKey)
 	if err != nil {
 		return nil, err
@@ -184,6 +182,10 @@ func prepareCascade(inv *inventory.Inventory, n *inventory.Node, p map[string]st
 	p["HPK"] = hpk
 	p["OBFS"] = strings.TrimRight(obfs.Lines(), "\n")
 	p["EXIT_IP"] = exit.Host
+	p["EXIT_SSH_PORT"] = strconv.Itoa(exit.SSH.Port)
+	if exit.SSH.Port == 0 {
+		p["EXIT_SSH_PORT"] = "22"
+	}
 	if n == exit {
 		p["SIDE"] = "server"
 		p["ADDR"] = fmt.Sprintf("%s/%d", exitIP, ones)
@@ -199,11 +201,19 @@ func prepareCascade(inv *inventory.Inventory, n *inventory.Node, p map[string]st
 		p["ENDPOINT"] = net.JoinHostPort(exit.Host, port)
 		p["TG_PREFIXES"] = telegramPrefixes
 	}
+	if err := prepareCascadeReserve(exit, p, sec, ns, &changed); err != nil {
+		return nil, err
+	}
+	if changed {
+		if err := sec.Save(); err != nil {
+			return nil, fmt.Errorf("сохранить секреты каскада: %w", err)
+		}
+	}
 	return p, nil
 }
 
 // SecretParams — какие параметры не печатать в плане и журналах.
-var SecretParams = map[string]bool{"PRIVATE": true, "PRIV": true, "PSK": true, "HPK": true, "TG_TOKEN": true}
+var SecretParams = map[string]bool{"PRIVATE": true, "PRIV": true, "PSK": true, "HPK": true, "TG_TOKEN": true, "REALITY_PRIVATE": true, "REALITY_UUID": true, "REALITY_SHORT_ID": true}
 
 // randInt — криптостойкое случайное число в [0, n).
 func randInt(n int64) int64 {
@@ -358,6 +368,10 @@ func prepareMonitoring(inv *inventory.Inventory, n *inventory.Node, p map[string
 		if n == entry {
 			p["PEER_NAME"], p["PEER_TUN"] = exit.Name, net.IPv4(b[0], b[1], b[2], b[3]+1).String()
 			p["EXIT_IP"] = exit.Host
+			p["EXIT_SSH_PORT"] = strconv.Itoa(exit.SSH.Port)
+			if exit.SSH.Port == 0 {
+				p["EXIT_SSH_PORT"] = "22"
+			}
 		} else {
 			p["PEER_NAME"], p["PEER_TUN"] = entry.Name, net.IPv4(b[0], b[1], b[2], b[3]+2).String()
 			p["PEER_PUBLIC"] = entry.Host
@@ -461,12 +475,12 @@ func contains(a []string, s string) bool {
 
 // Пины бинарников: версия и sha256 архива релиза (сверено с .dgst XTLS).
 const (
-	XrayVersion      = "26.3.27"
-	xraySHA256AMD64  = "23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae"
-	xraySHA256ARM64  = "4d30283ae614e3057f730f67cd088a42be6fdf91f8639d82cb69e48cde80413c"
-	SingBoxVersion   = "1.13.18"
-	singboxSHA256AMD = "c011a13c48e1fe66e39973b1dd7ec01d61ac7a0ac9e541024be9d452121c5761"
-	singboxSHA256ARM = "49755895316da3330cb962f4299354a356c7ddc971e263cba38c0a369bb36a1f"
+	XrayVersion      = "26.11.9"
+	xraySHA256AMD64  = "b651f7e1d9966ee2c1b1ee1bf8b52c72771824d3065dce96bbc8bcc19ed95f82"
+	xraySHA256ARM64  = "64ed6858982a7f5eb85d88b811089063bd4f17561f4c8f44e0f1dc8e6f6430be"
+	SingBoxVersion   = "1.13.21"
+	singboxSHA256AMD = "274e76b7b21f74fecc1766ef8c70436bc182343254f3df37eab2b31d13b3920a"
+	singboxSHA256ARM = "69172987bd889aa044db2dcd8e886f3ced041dec33b9d4979dbfc016958526fc"
 )
 
 // tunnelName — имя, на котором живут туннели: nginx-tls.tunnel_name или первое из names.
@@ -666,6 +680,8 @@ func prepareMTProxy(n *inventory.Node, p map[string]string, sec *secrets.Store) 
 // pins — закреплённые версии, от которых зависит модуль: смена пина — тоже новая версия модуля.
 func pins(module string) string {
 	switch module {
+	case "cascade-awg0":
+		return pins("xray") + pins("hysteria2")
 	case "xray":
 		return XrayVersion + xraySHA256AMD64 + xraySHA256ARM64
 	case "hysteria2":

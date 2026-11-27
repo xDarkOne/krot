@@ -19,9 +19,40 @@ else
   [ $ok = 1 ] || die "нет рукопожатия с exit за 30 с (порт закрыт у хостера? параметры не совпали?)"
   ping -I awg0 -c3 -W2 -q "$VK_PEER_TUN" >/dev/null || die "рукопожатие есть, но $VK_PEER_TUN не пингуется"
   say "проверка клиента каскада: рукопожатие есть, ping $VK_PEER_TUN через awg0 прошёл"
-  if ip=$(curl -4fsS -m10 --noproxy '*' --interface awg0 https://api.ipify.org) && [ "$ip" = "$VK_EXIT_IP" ]; then
-    say "выход через awg0 = $ip"
+  if /usr/local/lib/vpnkit/cascade/watch /etc/vpnkit/cascade/watch.json probe awg0; then
+    say "HTTPS через awg0 выходит с адреса exit"
   else
-    say "ВНИМАНИЕ: публичный выход не подтверждён (получено: ${ip:-нет ответа}, ждали $VK_EXIT_IP). Проверьте NAT, forwarding и доступность api.ipify.org на exit."
+    say "ВНИМАНИЕ: не подтверждён публичный выход через awg0. Проверьте NAT, forwarding и доступность HTTPS с exit."
+  fi
+fi
+
+if [ "$VK_SIDE" = client ]; then
+  systemctl is-active -q vpnkit-cascade-watch.service || die "watchdog каскада не запущен"
+fi
+if [ -n "${VK_REALITY_NAME:-}" ]; then
+  systemctl is-active -q vpnkit-cascade-xray.service || die "Xray резерва не запущен"
+  if [ "$VK_SIDE" = server ]; then
+    for _ in $(seq 1 5); do
+      pid=$(systemctl show -p MainPID --value vpnkit-cascade-xray.service)
+      socket=$(ss -Hltp "sport = :$VK_REALITY_PORT")
+      if [ "$pid" != 0 ] && grep -qF "pid=$pid," <<<"$socket"; then
+        say "Xray Reality принимает подключения на TCP/$VK_REALITY_PORT"
+        exit 0
+      fi
+      sleep 1
+    done
+    die "Xray Reality не слушает TCP/$VK_REALITY_PORT"
+  else
+    systemctl is-active -q vpnkit-cascade-tun.service || die "sing-box резерва не запущен"
+    ok=0
+    for _ in $(seq 1 4); do
+      if /usr/local/lib/vpnkit/cascade/watch /etc/vpnkit/cascade/watch.json probe sbtun; then
+        ok=1
+        break
+      fi
+      sleep 2
+    done
+    [ "$ok" = 1 ] || die "реальный HTTPS-выход через sbtun не подтверждён"
+    say "резерв sbtun: HTTPS выходит с адреса exit"
   fi
 fi

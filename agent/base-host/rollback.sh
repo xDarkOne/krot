@@ -9,6 +9,9 @@ systemctl daemon-reload
 # фаервол: снять свою таблицу; если был прежний nftables.conf — он восстановлен снимком
 nft delete table inet vpnkit_fw 2>/dev/null || true
 sysctl -q --system >/dev/null || true
+if [ -s "$VK_RUN/conntrack.before" ]; then
+  sysctl -qw "net.netfilter.nf_conntrack_max=$(cat "$VK_RUN/conntrack.before")" || true
+fi
 systemctl restart fail2ban 2>/dev/null || true
 systemctl restart systemd-journald 2>/dev/null || true
 say "откат base-host выполнен"

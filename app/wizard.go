@@ -14,6 +14,7 @@ import (
 	"github.com/xDarkOne/krot/internal/bootstrap"
 	"github.com/xDarkOne/krot/internal/cloudflare"
 	"github.com/xDarkOne/krot/internal/inventory"
+	"github.com/xDarkOne/krot/internal/modexec"
 	"github.com/xDarkOne/krot/internal/profile"
 	"github.com/xDarkOne/krot/internal/reach"
 	"github.com/xDarkOne/krot/internal/remote"
@@ -87,15 +88,18 @@ func (a *App) WDNS(name, ip string) reach.DNSResult { return reach.DNS(a.ctx, na
 
 // WSetup — что мастер запишет в inventory.
 type WSetup struct {
-	Topology   string          `json:"topology"` // cascade (вход + выход) | solo (один сервер)
-	Entry      WServer         `json:"entry"`    // в solo — единственный сервер
-	Exit       WServer         `json:"exit"`
-	Domain     string          `json:"domain"`     // пусто — без домена
-	TunnelName string          `json:"tunnelName"` // имя туннелей на входе (es.<домен>)
-	SubName    string          `json:"subName"`    // подписки и маска Telegram (ru.<домен>)
-	ExitName   string          `json:"exitName"`   // витрина выхода (en.<домен>), только каскад
-	Choices    map[string]bool `json:"choices"`    // модуль → включён (только то, что пользователь менял)
-	Dir        string          `json:"dir"`        // куда положить inventory.yaml и secrets.age
+	Topology          string          `json:"topology"` // cascade (вход + выход) | solo (один сервер)
+	Entry             WServer         `json:"entry"`    // в solo — единственный сервер
+	Exit              WServer         `json:"exit"`
+	Domain            string          `json:"domain"`     // пусто — без домена
+	TunnelName        string          `json:"tunnelName"` // имя туннелей на входе (es.<домен>)
+	SubName           string          `json:"subName"`    // подписки и маска Telegram (ru.<домен>)
+	ExitIPv6          string          `json:"exitIPv6"`
+	RealityServerName string          `json:"realityServerName"`
+	RealityPort       string          `json:"realityPort"`
+	ExitName          string          `json:"exitName"` // витрина выхода (en.<домен>), только каскад
+	Choices           map[string]bool `json:"choices"`  // модуль → включён (только то, что пользователь менял)
+	Dir               string          `json:"dir"`      // куда положить inventory.yaml и secrets.age
 }
 
 // build — inventory из ответов мастера (без записи на диск: его же показывает предпросмотр).
@@ -117,6 +121,23 @@ func (w WSetup) build() (*inventory.Inventory, error) {
 			return nil, errors.New("у входа и выхода должны быть разные имена")
 		}
 		inv = inventory.NewCascade(w.Entry.Name, w.Entry.Host, w.Exit.Name, w.Exit.Host, keyDir(), en, xn)
+		exit := inv.Nodes[w.Exit.Name]
+		settings := map[string]any{}
+		for setting, value := range map[string]string{
+			"exit_ipv6":           w.ExitIPv6,
+			"reality_server_name": w.RealityServerName,
+			"reality_port":        w.RealityPort,
+		} {
+			if value = strings.TrimSpace(value); value != "" {
+				settings[setting] = value
+			}
+		}
+		if len(settings) > 0 {
+			exit.Modules["cascade-awg0"] = settings
+			if err := modexec.ValidateCascadeReserve(exit); err != nil {
+				return nil, err
+			}
+		}
 		if w.Exit.Via != "" { // выход отсюда не виден — ходим через вход
 			e := inv.Nodes[w.Entry.Name]
 			inv.Nodes[w.Exit.Name].SSH.Jump = &inventory.Jump{Host: w.Entry.Host, Port: 22, User: "root", Key: e.SSH.Key}

@@ -12,6 +12,14 @@ if [ "$(timedatectl show -p Timezone --value 2>/dev/null)" != "$VK_TIMEZONE" ]; 
 fi
 
 # --- sysctl
+if [ "$VK_ROLE" = entry ] || [ "$VK_ROLE" = exit ]; then
+  printf 'nf_conntrack\n' | put /etc/modules-load.d/vpnkit-conntrack.conf 644
+  modprobe nf_conntrack
+  current_limit=$(sysctl -n net.netfilter.nf_conntrack_max)
+  printf '%s\n' "$current_limit" > "$VK_RUN/conntrack.before"
+  limit=$((current_limit > 32768 ? current_limit : 32768))
+  printf 'net.netfilter.nf_conntrack_max = %s\n' "$limit" | put /etc/sysctl.d/99-vpnkit-conntrack.conf 644
+fi
 {
   echo "# vpnkit base-host"
   echo "net.ipv4.ip_forward=1"

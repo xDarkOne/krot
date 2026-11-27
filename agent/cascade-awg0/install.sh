@@ -28,11 +28,13 @@ mkdir -p /etc/amnezia/amneziawg; chmod 700 /etc/amnezia/amneziawg
     # всё, что entry отправляет в каскад, уходит через таблицу 200 (формат строк читает cascade-watch)
     echo "PostUp = ip rule add from $tunip table 200 priority 200"
     echo "PostUp = ip rule add fwmark 0x3 table 200 priority 207"
+    echo "PostUp = ip route replace unreachable default metric 32760 table 200"
     echo "PostUp = ip route replace default dev awg0 table 200"
     for p in ${VK_TG_PREFIXES:-}; do echo "PostUp = ip route replace $p dev awg0"; done
     echo "PostDown = ip rule del from $tunip table 200 priority 200 || true"
     echo "PostDown = ip rule del fwmark 0x3 table 200 priority 207 || true"
     echo "PostDown = ip route del default dev awg0 table 200 || true"
+    echo "PostDown = ip route del unreachable default metric 32760 table 200 || true"
   fi
   echo
   echo "[Peer]"
@@ -50,14 +52,18 @@ awg-quick strip awg0 >/dev/null 2>"$VK_RUN/strip.err" || die "awg-quick не р�
 # --- фаервол: правила в общей таблице vpnkit_fw (разрешение должно лежать в той же
 # цепочке, где policy drop — P-03) + своя таблица для NAT и MSS.
 if [ "$VK_SIDE" = server ]; then
-  fw_in="		udp dport $VK_PORT accept
-		iifname \"awg0\" accept"
-  fw_fwd='		iifname "awg0" oifname != "awg0" accept'
-  nat="		ip saddr $VK_TUN_NET oifname != \"awg0\" masquerade"
+  fw_in="udp dport $VK_PORT accept
+    iifname \"awg0\" accept"
+  if [ -n "${VK_REALITY_NAME:-}" ]; then
+    fw_in+="
+    ip protocol tcp tcp dport $VK_REALITY_PORT accept"
+  fi
+  fw_fwd='iifname "awg0" oifname != "awg0" accept'
+  nat="ip saddr $VK_TUN_NET oifname != \"awg0\" masquerade"
 else
-  fw_in='		iifname "awg0" accept'
+  fw_in='iifname "awg0" accept'
   fw_fwd=''
-  nat='		meta mark 0x00000003 oifname "awg0" masquerade'
+  nat='meta mark 0x00000003 oifname "awg0" masquerade'
 fi
 cat <<EOF | put /etc/nftables.d/20-vpnkit-cascade.nft 644
 # vpnkit cascade-awg0 ($VK_SIDE). Применяется вместе со всем /etc/nftables.conf:
@@ -97,3 +103,5 @@ else
   systemctl start awg-quick@awg0
 fi
 say "туннель awg0 ($VK_SIDE): $(ip -br addr show awg0 | awk '{print $3}')"
+
+. "$VK_RUN/src/cascade-reserve-install.sh"

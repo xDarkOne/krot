@@ -23,4 +23,8 @@ nodes:
     # ssh: {user: root, port: 22, auth: key, key: ~/.krot/keys/eu_ed25519,
     #       jump: {host: 203.0.113.10, user: root, key: ~/.krot/keys/ru_ed25519}}
     modules:
+      cascade-awg0:
+        # exit_ipv6: "2001:db8::20"         # замените на глобальный IPv6 выхода или удалите строку
+        reality_server_name: ""          # укажите имя доступного с exit внешнего TLS 1.3 / HTTP/2 сайта
+        reality_port: 24443              # TCP для резерва, отдельно от веб-витрины на 443
       nginx-tls: {names: [en.example.org]}   # витрина выхода (по желанию)

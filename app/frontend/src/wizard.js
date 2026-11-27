@@ -9,6 +9,7 @@ const W = {
     topology: 'cascade',
     entry: {name: 'ru', host: '', rootPassword: '', role: 'entry', ok: false, keyed: false, via: '', viaName: ''},
     exit: {name: 'eu', host: '', rootPassword: '', role: 'exit', ok: false, keyed: false, via: '', viaName: ''},
+    exitIPv6: '', realityServerName: '', realityPort: '',
     domain: '', hasDomain: true, dns: {}, created: false,
     choices: {},                                    // модуль → включён (только то, что меняли)
     pre: {tunnel: 'es', sub: 'ru', exit: 'en'},     // поддомены по умолчанию
@@ -90,6 +91,7 @@ function setup() {
     return {
         topology: W.topology, entry: {...W.entry, role: solo() ? 'solo' : 'entry'}, exit: W.exit, domain: d,
         tunnelName: d ? `${W.pre.tunnel}.${d}` : '', subName: d ? `${W.pre.sub}.${d}` : '',
+        exitIPv6: W.exitIPv6, realityServerName: W.realityServerName, realityPort: W.realityPort,
         exitName: d && !solo() ? `${W.pre.exit}.${d}` : '', choices: W.choices, dir: '',
     };
 }
@@ -129,6 +131,20 @@ function schemeStep() {
 function verdictBlock(list) {
     const icon = {ok: '✓', warn: '!', fail: '✗'};
     return el('ul', {class: 'verdict'}, list.map((f) => el('li', {class: f.level}, `${icon[f.level] || '•'} ${f.what}`)));
+}
+
+function reserveFields() {
+    const field = (key, label, attributes) => {
+        const input = el('input', {...attributes, value: W[key]});
+        input.addEventListener('input', () => { W[key] = input.value.trim(); });
+        return el('label', {}, label, input);
+    };
+    return el('details', {},
+        el('summary', {}, 'Резервные маршруты каскада'),
+        el('div', {class: 'form'},
+            field('exitIPv6', 'IPv6 выхода', {placeholder: '2001:db8::20'}),
+            field('realityServerName', 'TLS-сайт для TCP-резерва', {placeholder: 'Имя сайта с TLS 1.3 / HTTP/2'}),
+            field('realityPort', 'TCP-порт резерва', {type: 'number', min: '1', max: '65535', placeholder: '24443'})));
 }
 
 function serverStep(key) {
@@ -211,6 +227,7 @@ function serverStep(key) {
                 el('label', {}, 'Имя', name, el('span', {class: 'muted small'}, 'латиница, для себя: ru, eu, vpn')),
                 el('label', {}, 'IP-адрес', host),
                 el('label', {}, 'Пароль root', pass)),
+            isEntry ? null : reserveFields(),
             el('div', {class: 'row'}, check, toKey),
             out, pre,
             el('div', {class: 'row'}, el('button', {class: 'ghost', onclick: back}, 'Назад'), go));

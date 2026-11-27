@@ -135,11 +135,6 @@ func Install(ctx context.Context, inv *inventory.Inventory, n *inventory.Node, m
 		return fmt.Errorf("подготовка параметров: %w", err)
 	}
 	pf := platformOf(n)
-	// пакеты и другие двоичные файлы пульт качает и сверяет сам — до любых изменений на узле
-	arts, err := artifacts(ctx, n, module, params, sec)
-	if err != nil {
-		return fmt.Errorf("подготовка файлов для узла: %w (ничего не менялось)", err)
-	}
 	run := fmt.Sprintf("%s/%s-%s", pf.runs, module, time.Now().Format("20060102-150405"))
 	unit := "vpnkit-deadman-" + module
 	dm := deadmanFor(module)
@@ -164,6 +159,12 @@ func Install(ctx context.Context, inv *inventory.Inventory, n *inventory.Node, m
 		if err != nil {
 			return fmt.Errorf("preflight: %w (ничего не менялось)", err)
 		}
+	}
+
+	// пакеты и другие двоичные файлы пульт качает и сверяет сам — до любых изменений на узле
+	arts, err := artifacts(ctx, cl, module, params)
+	if err != nil {
+		return fmt.Errorf("подготовка файлов для узла: %w (ничего не менялось)", err)
 	}
 
 	// откат и «мёртвая рука» — ДО любых изменений

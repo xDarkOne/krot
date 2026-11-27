@@ -3,6 +3,9 @@
 # (grep -q выходит рано, cmd получает SIGPIPE) — поймано 02.10.2026.
 : "${VK_ROLE:?}" "${VK_SSH_PORT:=22}"
 has() { grep -q -- "$2" <<<"$1"; }
+if [ "$VK_ROLE" = entry ] || [ "$VK_ROLE" = exit ]; then
+  [ "$(sysctl -n net.netfilter.nf_conntrack_max)" -ge 32768 ] || die "лимит conntrack меньше 32768"
+fi
 [ "$(sysctl -n net.ipv4.ip_forward)" = 1 ] || die "ip_forward не 1"
 [ "$(sysctl -n net.ipv4.tcp_congestion_control)" = bbr ] || die "не bbr"
 [ "$VK_ROLE" = exit ] || [ "$(sysctl -n net.ipv4.ip_nonlocal_bind)" = 1 ] || die "ip_nonlocal_bind не 1"

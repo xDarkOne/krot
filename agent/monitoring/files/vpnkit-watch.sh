@@ -42,7 +42,7 @@ chk() { RESULT[$1]="$2"; }   # chk <ключ> "<проблема или пуст
 svc() { for s in "$@"; do systemctl is-active --quiet "$s" && chk "svc:$s" "" || chk "svc:$s" "служба $s: $(systemctl is-active "$s")"; done; }
 
 # включённые службы, которые обязаны работать (своё и стек VPN; чужое на узле не смотрим)
-WATCH_RE='^(awg-quick@|wg-quick@|nftables|dnsmasq|fail2ban|xray|sing-box|nginx|docker|danted|mtproxyl|telemt|mss443)'
+WATCH_RE='^(awg-quick@|wg-quick@|nftables|dnsmasq|fail2ban|xray|sing-box|nginx|docker|danted|mtproxyl|telemt|mss443|vpnkit-cascade-)'
 # экземпляры шаблонов (awg-quick@awg0) list-unit-files не показывает — их видно по ссылкам *.wants/
 units=$( { systemctl list-unit-files --type=service --state=enabled --no-legend 2>/dev/null | awk '{print $1}'
            find /etc/systemd/system -path '*.wants/*.service' -printf '%f\n' 2>/dev/null; } \
@@ -97,8 +97,30 @@ ru_nets() {  # набор российских сетей split (vpnkit_split; �
   done
 }
 
-# каскад: entry видит в интернете адрес выхода
-if [ -n "$EXIT_IP" ] && ip link show awg0 >/dev/null 2>&1; then
+# Политика маршрутизации и HTTPS проверяются через выбранный интерфейс каскада.
+CASCADE_CONF=/etc/vpnkit/cascade/watch.json
+CASCADE_PROBE=/usr/local/lib/vpnkit/cascade/watch
+if [ -f "$CASCADE_CONF" ] && [ -x "$CASCADE_PROBE" ]; then
+  dev=$(ip -4 route show default table 200 | awk '$1=="default" && $2=="dev"{print $3; exit}')
+  case "$dev" in
+    awg0|sbtun)
+      if "$CASCADE_PROBE" "$CASCADE_CONF" probe "$dev"; then
+        chk cascade ""
+        [ "$dev" = awg0 ] && chk cascade_reserve "" || chk cascade_reserve "каскад работает через резерв sbtun"
+      else
+        chk cascade "нет HTTPS-выхода через $dev на узле $PEER_NAME"
+      fi
+      if systemctl is-enabled --quiet vpnkit-cascade-tun.service; then
+        if [ "$dev" = sbtun ] || "$CASCADE_PROBE" "$CASCADE_CONF" probe sbtun; then
+          chk reserve_https ""
+        else
+          chk reserve_https "резерв sbtun не проходит HTTPS-проверку"
+        fi
+      fi
+      ;;
+    *) chk cascade "нет маршрута awg0 или sbtun в таблице 200" ;;
+  esac
+elif [ -n "$EXIT_IP" ] && ip link show awg0 >/dev/null 2>&1; then
   ip=$(curl -s -m 10 --interface awg0 https://api.ipify.org)
   [ "$ip" = "$EXIT_IP" ] && chk cascade "" || chk cascade "каскад через awg0 не выходит на $EXIT_IP (получено: ${ip:-нет ответа})"
 fi

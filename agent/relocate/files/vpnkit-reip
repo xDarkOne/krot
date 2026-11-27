@@ -8,10 +8,11 @@
 # Сеть (networking) не перезапускается, чтобы не оборвать ssh: адрес вступит в силу после reboot.
 set -u
 # Файлы Крота, где прошиты адреса. Свои добавляйте по одному пути в строке в /etc/vpnkit/reip.extra.
-FILES="/etc/network/interfaces /etc/hosts /etc/vpnkit/*.conf /etc/traffic-guard.exempt
+FILES="/etc/network/interfaces /etc/hosts /etc/vpnkit/*.conf /etc/vpnkit/cascade/*.json /etc/traffic-guard.exempt
 /etc/amnezia/amneziawg/*.conf /etc/wireguard/*.conf /etc/sing-box/*.json /etc/telemt/telemt.toml
 /etc/nftables.d/*.nft $(cat /etc/vpnkit/reip.extra 2>/dev/null)"
-UNITS="awg-quick@awg0 awg-quick@awg1 awg-quick@awg2 traffic-guard telemt sing-box xray warp-ru nginx"
+UNITS="awg-quick@awg0 awg-quick@awg1 awg-quick@awg2 traffic-guard telemt sing-box xray warp-ru nginx
+vpnkit-cascade-xray vpnkit-cascade-tun vpnkit-cascade-watch"
 OLD=(); NEW=(); APPLY=0
 while [ $# -gt 0 ]; do
   case $1 in

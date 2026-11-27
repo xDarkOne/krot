@@ -284,10 +284,10 @@ def subs(u, x, h, s):
             write_if_changed(os.path.join(outdir, filename), profile["link"] + "\n", 0o640, group="www-data")
             want.add(filename)
         if n in combined:
-            token = profile["feed_token"]
+            feed_id = profile["feed_token"]
             unified = base64.b64encode("\n".join(proxy_links + [combined[n]]).encode()).decode()
-            write_if_changed(os.path.join(outdir, token), unified, 0o640, group="www-data")
-            want.add(token)
+            write_if_changed(os.path.join(outdir, feed_id), unified, 0o640, group="www-data")
+            want.add(feed_id)
     # подписки удалённых клиентов не должны отвечать; в каталоге только наши файлы
     gone = 0
     for f in set(os.listdir(outdir)) - want:
@@ -593,10 +593,10 @@ def card(name, u):
         profile = c.get("amnezia")
         if profile:
             out["amnezia_url"] = prefix + profile["token"] + ".vpnuri"
-            token = profile.get("feed_token")
-            if token and amnezia_share_link(name, profile) and os.path.isfile(os.path.join(s["OUTDIR"], token)):
+            feed_id = profile.get("feed_token")
+            if feed_id and amnezia_share_link(name, profile) and os.path.isfile(os.path.join(s["OUTDIR"], feed_id)):
                 out["compat_url"] = out["sub_url"]
-                out["sub_url"] = prefix + token
+                out["sub_url"] = prefix + feed_id
         if s.get("ROUTING", "1") == "1":
             out["routing"] = {"happ": f"https://{s['SUB_NAME']}/h", "incy": f"https://{s['SUB_NAME']}/i"}
     return out

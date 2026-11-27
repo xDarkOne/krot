@@ -6,7 +6,7 @@ import {
     Modules, Install, Answer, Backups, PullBackup, RestoreClients,
 } from '../wailsjs/go/main/App';
 import {EventsOn} from '../wailsjs/runtime/runtime';
-import {$, el, toast, errText} from './util.js';
+import {$, closeModal, el, toast, errText} from './util.js';
 import {startWizard} from './wizard.js';
 import {initAppUpdate, updateNow} from './appupdate.js';
 import {openAlerts} from './alerts.js';
@@ -504,7 +504,6 @@ function showCard(card, fresh) {
     $('modal').hidden = false;
 }
 
-function closeModal() { $('modal').hidden = true; $('modal-body').replaceChildren(); }
 $('modal-close').addEventListener('click', closeModal);
 $('modal').addEventListener('click', (e) => { if (e.target === $('modal')) closeModal(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });

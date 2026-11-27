@@ -2,6 +2,11 @@
 
 export const $ = (id) => document.getElementById(id);
 
+export function closeModal() {
+    $('modal').hidden = true;
+    $('modal-body').replaceChildren();
+}
+
 export function el(tag, props = {}, ...kids) {
     const e = document.createElement(tag);
     for (const [k, v] of Object.entries(props)) {

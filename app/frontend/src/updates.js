@@ -1,7 +1,7 @@
 // Обновления модулей: на узлах стоит версия кода старее, чем в этом пульте.
 // Ход обновления приходит событиями deploy-log (как у установки в мастере) в #wlog/#wbar/#wcap.
 import {Updates, ApplyUpdates} from '../wailsjs/go/main/App';
-import {$, el, toast, errText} from './util.js';
+import {$, closeModal, el, toast, errText} from './util.js';
 
 let plan = [];
 let onDone = null;
@@ -25,25 +25,31 @@ export async function checkUpdates(done) {
 function openUpdates() {
     const go = el('button', {}, 'Обновить');
     const result = el('div', {});
-    go.addEventListener('click', async () => {
+    const progress = el('div', {id: 'wbar', style: 'width:0%'});
+    go.onclick = async () => {
         go.disabled = true; go.textContent = 'Обновляю…';
         try {
             await ApplyUpdates();
-            $('wbar').style.width = '100%';
-            result.replaceChildren(el('div', {class: 'checks ok'}, '✓ Все модули обновлены и проверены.'));
-            toast('Обновление завершено');
-            $('upd').hidden = true;
-            if (onDone) onDone();
         } catch (e) {
             result.replaceChildren(el('div', {class: 'checks bad'}, '✗ ' + errText(e) + ' — шаг откатан; «Обновить» продолжит с него.'));
             go.disabled = false; go.textContent = 'Обновить';
+            return;
         }
-    });
+        progress.style.width = '100%';
+        result.replaceChildren(el('div', {class: 'checks ok'}, '✓ Все модули обновлены и проверены.'));
+        go.textContent = 'Окей';
+        go.onclick = closeModal;
+        go.disabled = false;
+        go.focus();
+        toast('Обновление завершено');
+        $('upd').hidden = true;
+        if (onDone) onDone();
+    };
     $('modal-body').replaceChildren(
         el('h2', {}, 'Обновления'),
         el('p', {class: 'muted'}, 'В этой версии приложения изменились скрипты или закреплённые версии программ. Модули обновляются по одному: снимок → откат по таймеру, если связь пропадёт → установка → проверка. Службы перезапускаются, только если их настройки или программа действительно изменились.'),
         el('ul', {class: 'verdict'}, plan.map((s) => el('li', {}, `→ ${s.title} · ${s.node}`))),
-        el('div', {id: 'wcap', class: 'muted'}), el('div', {class: 'pbar'}, el('div', {id: 'wbar', style: 'width:0%'})),
+        el('div', {id: 'wcap', class: 'muted'}), el('div', {class: 'pbar'}, progress),
         el('pre', {class: 'install-log', id: 'wlog'}),
         result,
         el('div', {class: 'row'}, go));

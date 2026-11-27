@@ -32,20 +32,33 @@ function dotClass(st) {
     return 'dot ok';
 }
 
-function renderNodes() {
-    const ul = $('nodes');
-    ul.replaceChildren(...state.nodes.map((n) => {
-        const st = statusCache[n.name];
-        return el('li', {class: current === n.name ? 'active' : '', onclick: () => selectNode(n.name)},
-            el('span', {class: dotClass(st)}),
-            el('span', {class: 'nm'}, n.name),
-            el('span', {class: 'sub'}, `${ROLE[n.role] || n.role} · ${n.host}`));
-    }));
+function renderInventory() {
+    const list = $('nodes');
+    const nodes = state.nodes;
+    $('refresh-all').disabled = !nodes.length;
+    if (!nodes.length) {
+        list.replaceChildren();
+        return;
+    }
+    const indicators = nodes.map((n) => dotClass(statusCache[n.name]));
+    const health = ['dot bad', 'dot warn', 'dot busy', 'dot'].find((level) => indicators.includes(level)) || 'dot ok';
+    const name = nodes.length === 1 ? 'Один сервер'
+        : nodes.some((n) => n.role === 'entry') && nodes.some((n) => n.role === 'exit') ? 'Каскад' : 'Серверы';
+    list.replaceChildren(el('li', {},
+        el('button', {class: 'inventory-record', 'aria-current': current ? 'page' : null, onclick: () => {
+            selectNode(current || nodes[0].name);
+            $('main').scrollTop = 0;
+        }}, el('span', {class: health, 'aria-hidden': 'true'}),
+        el('span', {class: 'inventory-name'}, name),
+        el('span', {class: 'inventory-count'}, `Серверов: ${nodes.length}`))));
+    for (const dot of document.querySelectorAll('.server-switcher [data-node-status]')) {
+        dot.className = dotClass(statusCache[dot.dataset.nodeStatus]);
+    }
 }
 
 async function refreshStatus(name) {
     statusCache[name] = {...(statusCache[name] || {}), busy: true};
-    renderNodes();
+    renderInventory();
     if (current === name) renderNode();
     try {
         statusCache[name] = await Status(name);
@@ -53,7 +66,7 @@ async function refreshStatus(name) {
         statusCache[name] = {reachable: false, error: errText(e)};
     }
     await loadModules(name);
-    renderNodes();
+    renderInventory();
     if (current === name) renderNode();
 }
 
@@ -239,7 +252,7 @@ async function loadState(s) {
     $('inv').textContent = state.inventory || 'файл узлов не открыт';
     const w = $('welcome');
     if (w) w.hidden = !!state.inventory;
-    renderNodes();
+    renderInventory();
     if (state.nodes && state.nodes.length) {
         if (!current || !state.nodes.find((n) => n.name === current)) selectNode(state.nodes[0].name);
         state.nodes.forEach((n) => refreshStatus(n.name));
@@ -281,7 +294,7 @@ const clientCache = {};
 
 function selectNode(name) {
     current = name;
-    renderNodes();
+    renderInventory();
     renderNode();
     const n = state.nodes.find((x) => x.name === name);
     if (n && (n.role === 'entry' || n.role === 'solo') && !clientCache[name]) loadClients(name);
@@ -292,24 +305,34 @@ function renderNode() {
     if (!n) return;
     const st = statusCache[n.name];
     const main = $('main');
-    const head = el('div', {class: 'node-head'},
-        el('h1', {}, n.name), el('span', {class: 'role'}, ROLE[n.role] || n.role),
-        el('span', {class: 'host'}, n.host), el('span', {class: 'grow'}),
-        el('button', {class: 'ghost', disabled: st && st.busy ? '' : null, onclick: () => refreshStatus(n.name)},
-            st && st.busy ? 'Проверяю…' : 'Проверить'));
-    const blocks = [head, statusCard(st)];
+    const focused = main.querySelector('.server-option:focus')?.dataset.node;
+    const buttons = state.nodes.map((node) => el('button', {
+        class: 'server-option', 'data-node': node.name, 'aria-pressed': String(node.name === n.name),
+        onclick: () => selectNode(node.name),
+    },
+    el('span', {class: dotClass(statusCache[node.name]), 'data-node-status': node.name, 'aria-hidden': 'true'}),
+    el('strong', {}, node.name), el('span', {class: 'server-role'}, ROLE[node.role] || node.role),
+    el('span', {class: 'server-host'}, node.host)));
+    const info = el('section', {class: 'card server-info', 'aria-labelledby': 'server-info-title'},
+        el('div', {class: 'server-info-head'}, el('h1', {id: 'server-info-title'}, 'Серверы'),
+            el('button', {class: 'ghost', disabled: st && st.busy ? '' : null, title: `Проверить ${n.name}`,
+                onclick: () => refreshStatus(n.name)}, st && st.busy ? 'Проверяю…' : 'Проверить')),
+        el('div', {class: 'server-switcher', role: 'group', 'aria-label': 'Выбор сервера'}, buttons),
+        statusContent(st));
+    const blocks = [info];
     blocks.push(modulesCard(n.name));
     blocks.push(backupsCard(n));
     if (n.role === 'entry' || n.role === 'solo') blocks.push(clientsCard(n.name));
     else if (n.role === 'exit') blocks.push(el('div', {class: 'card muted'},
         'Клиенты подключаются к входу; выход только выпускает их трафик в интернет.'));
     main.replaceChildren(...blocks);
+    if (focused) buttons.find((button) => button.dataset.node === focused)?.focus({preventScroll: true});
 }
 
-function statusCard(st) {
-    if (!st || (st.busy && !st.at)) return el('div', {class: 'card muted'}, 'Связываюсь с узлом…');
+function statusContent(st) {
+    if (!st || (st.busy && !st.at)) return el('div', {class: 'muted'}, 'Связываюсь с узлом…');
     if (!st.reachable || st.error && !st.os) {
-        return el('div', {class: 'card'}, el('h3', {}, 'Нет связи'), el('div', {class: 'err'}, st.error || 'узел не ответил'));
+        return el('div', {}, el('h3', {}, 'Нет связи'), el('div', {class: 'err'}, st.error || 'узел не ответил'));
     }
     const facts = el('dl', {class: 'facts'},
         el('dt', {}, 'Система'), el('dd', {}, `${st.os}, ядро ${st.kernel}`),
@@ -325,7 +348,7 @@ function statusCard(st) {
     else if (!st.failed || !st.failed.length) checks = el('div', {class: 'checks ok'}, `✓ Проверок ${st.checks}, все прошли`);
     else checks = el('div', {class: 'checks bad'}, `✗ Проверок ${st.checks}, не прошло ${st.failed.length}:`,
         el('ul', {class: 'fails'}, st.failed.map((f) => el('li', {}, f))));
-    return el('div', {class: 'card'},
+    return el('div', {},
         el('h3', {}, 'Состояние'), facts,
         el('h3', {style: 'margin-top:14px'}, 'Модули'), modBlock,
         el('h3', {style: 'margin-top:14px'}, 'Проверки'), checks);
@@ -529,7 +552,7 @@ $('alerts').addEventListener('click', () => openAlerts());
 $('versions').addEventListener('click', () => openVersions());
 $('new').addEventListener('click', () => {
     current = null;
-    renderNodes();
+    renderInventory();
     startWizard(async () => {   // мастер создал и открыл новый inventory
         Object.keys(statusCache).forEach((k) => delete statusCache[k]);
         Object.keys(clientCache).forEach((k) => delete clientCache[k]);

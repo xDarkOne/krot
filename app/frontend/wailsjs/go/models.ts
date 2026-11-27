@@ -180,6 +180,8 @@ export namespace main {
 	    awg: string[];
 	    sub: string[];
 	    tg: string[];
+	    published: string[];
+	    delivery: boolean | null;
 	    errors: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
@@ -191,6 +193,8 @@ export namespace main {
 	        this.awg = source["awg"];
 	        this.sub = source["sub"];
 	        this.tg = source["tg"];
+	        this.published = source["published"];
+	        this.delivery = source["delivery"];
 	        this.errors = source["errors"];
 	    }
 	}

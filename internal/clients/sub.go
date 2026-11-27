@@ -120,6 +120,27 @@ func SubNames(ctx context.Context, n *inventory.Node) ([]string, error) {
 	return strings.Fields(out), nil
 }
 
+// SubSummary exposes publishing state without returning access links or keys.
+type SubSummary struct {
+	Names     []string `json:"names"`
+	Published []string `json:"published"`
+	Delivery  *bool    `json:"delivery"`
+}
+
+func GetSubSummary(ctx context.Context, n *inventory.Node) (SubSummary, error) {
+	out, err := gen(ctx, n, "list", "--summary")
+	if err != nil {
+		return SubSummary{}, err
+	}
+	if !strings.HasPrefix(strings.TrimSpace(out), "{") {
+		// Older agents ignore the flag and return the regular list.
+		return SubSummary{Names: strings.Fields(out)}, nil
+	}
+	var summary SubSummary
+	err = json.Unmarshal([]byte(out), &summary)
+	return summary, err
+}
+
 // TGCard — пользователь MTProxy: ссылки tg:// (открывает Telegram) и https://t.me/proxy (для QR и браузера).
 type TGCard struct {
 	Name  string `json:"name"`

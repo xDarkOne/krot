@@ -255,10 +255,12 @@ func (a *App) Status(name string) (status.Status, error) {
 
 // ClientList — клиенты узла по видам. Ошибка вида не мешает остальным (модуля может не быть).
 type ClientList struct {
-	AWG    []string          `json:"awg"`
-	Sub    []string          `json:"sub"`
-	TG     []string          `json:"tg"`
-	Errors map[string]string `json:"errors"`
+	AWG       []string          `json:"awg"`
+	Sub       []string          `json:"sub"`
+	TG        []string          `json:"tg"`
+	Published []string          `json:"published"`
+	Delivery  *bool             `json:"delivery"`
+	Errors    map[string]string `json:"errors"`
 }
 
 // Clients — все клиенты узла.
@@ -273,15 +275,19 @@ func (a *App) Clients(name string) (ClientList, error) {
 	}
 	if sec, err := a.vault(); err != nil {
 		out.Errors["awg"] = err.Error()
+	} else if in, err := clients.LoadInput(n, "", sec); err != nil {
+		out.Errors["awg"] = err.Error()
 	} else {
 		for _, x := range clients.Names(n, sec) {
-			out.AWG = append(out.AWG, strings.SplitN(x, " ", 2)[0])
+			if name, ok := strings.CutSuffix(x, " ("+in.Iface+")"); ok {
+				out.AWG = append(out.AWG, name)
+			}
 		}
 	}
-	if l, err := clients.SubNames(a.ctx, n); err != nil {
+	if summary, err := clients.GetSubSummary(a.ctx, n); err != nil {
 		out.Errors["sub"] = err.Error()
 	} else {
-		out.Sub = l
+		out.Sub, out.Published, out.Delivery = summary.Names, summary.Published, summary.Delivery
 	}
 	if _, l, err := clients.TGClient(a.ctx, n, "list", ""); err != nil {
 		out.Errors["tg"] = err.Error()

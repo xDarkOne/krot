@@ -20,11 +20,7 @@ let current = null;
 EventsOn('log', (s) => toast(s));
 
 const ROLE = {entry: 'вход', exit: 'выход', solo: 'один сервер'};
-const KIND = {
-    awg: {title: 'AmneziaWG', what: 'Приложение AmneziaVPN, весь трафик телефона или компьютера'},
-    sub: {title: 'Подписка', what: 'Happ, v2rayNG, Hiddify: hysteria2, XHTTP, PQ одной ссылкой'},
-    tg: {title: 'Telegram', what: 'Прокси только для Telegram, без приложений'},
-};
+const CLIENT_TYPES = {awg: 'Профиль AmneziaVPN', sub: 'Подписка', tg: 'Прокси Telegram'};
 
 // ---- список узлов ---------------------------------------------------------
 
@@ -354,36 +350,80 @@ function clientsCard(node) {
         el('button', {class: 'ghost small', onclick: () => OpenClientsFolder(node).catch((e) => toast(errText(e), true))}, 'Папка с файлами'));
     if (!c || c.loading) return el('div', {class: 'card'}, head, el('div', {class: 'muted'}, 'Загружаю список…'));
     if (c.error) return el('div', {class: 'card'}, head, el('div', {class: 'err'}, c.error));
-    const cols = ['awg', 'sub', 'tg'].map((kind) => clientColumn(node, kind, c[kind] || [], (c.errors || {})[kind]));
-    return el('div', {class: 'card'}, head, el('div', {class: 'cols'}, cols));
+    const errors = c.errors || {};
+    const awg = new Set(c.awg || []);
+    const subs = new Set(c.sub || []);
+    const published = new Set(c.published || []);
+    const names = [...new Set([...subs, ...awg])].sort((a, b) => a.localeCompare(b));
+    const kinds = ['sub', 'awg'].filter((kind) => !errors[kind]);
+    const feeds = el('div', {class: 'access-formats'},
+        el('div', {}, el('strong', {}, 'Подписка'), el('span', {}, 'VLESS XHTTP · VLESS PQ · Hysteria2')),
+        el('div', {}, el('strong', {}, 'AmneziaVPN'), el('span', {}, 'Профиль AWG · HTTPS-загрузка из карточки подписки')));
+    const table = el('div', {class: 'access-list'},
+        names.length ? el('div', {class: 'access-row access-columns'},
+            el('span', {}, 'Устройство'), el('span', {}, 'Подписка'), el('span', {}, 'AmneziaVPN')) : null,
+        names.length ? names.map((name) => {
+            const hasSub = subs.has(name), hasAWG = awg.has(name), isPublished = published.has(name);
+            let status = 'Профиль не создан';
+            if (isPublished) status = 'Ссылка опубликована';
+            else if (hasAWG && hasSub && c.delivery === true) status = 'Готов к публикации';
+            else if (hasSub && c.delivery === false) status = 'Модуль подписок выключен';
+            else if (hasSub && c.delivery == null) status = 'Статус в карточке подписки';
+            else if (hasAWG) status = 'Импорт по QR или из файла';
+            return el('div', {class: 'access-row'},
+                el('strong', {class: 'access-name'}, name),
+                el('div', {class: 'access-cell'}, el('span', {class: 'access-mobile-label'}, 'Подписка'),
+                    hasSub ? clientOpenButton(node, 'sub', name, 'Открыть подписку') : el('span', {class: 'muted'}, 'Нет подписки')),
+                el('div', {class: 'access-cell'}, el('span', {class: 'access-mobile-label'}, 'AmneziaVPN'),
+                    el('span', {class: isPublished ? 'access-state published' : 'access-state'}, status),
+                    hasAWG ? clientOpenButton(node, 'awg', name, 'Открыть профиль') : null,
+                    !hasAWG && hasSub && !errors.awg && /^[A-Za-z0-9_-]{1,32}$/.test(name)
+                        ? el('button', {class: 'ghost small', onclick: (e) => addClient(node, 'awg', name, e.currentTarget)}, 'Создать профиль') : null));
+        }) : el('p', {class: 'muted access-empty'}, 'Устройств пока нет. Создайте подписку или профиль AmneziaWG.'));
+    return el('div', {class: 'card access-card'}, head, feeds, table,
+        errors.sub ? el('p', {class: 'muted'}, errors.sub) : null,
+        errors.awg ? el('p', {class: 'muted'}, errors.awg) : null,
+        kinds.length ? clientForm(node, kinds) : null,
+        el('details', {class: 'access-tg'},
+            el('summary', {}, 'Прокси Telegram', (c.tg || []).length ? ` · ${c.tg.length}` : ''),
+            errors.tg ? el('p', {class: 'muted'}, errors.tg) : [
+                el('div', {class: 'access-proxies'}, (c.tg || []).map((name) => clientOpenButton(node, 'tg', name, name))),
+                clientForm(node, ['tg'])]));
 }
 
-function clientColumn(node, kind, names, error) {
-    const input = el('input', {placeholder: 'имя: латиница, цифры, - _', maxlength: '32'});
-    const btn = el('button', {}, 'Добавить');
-    const add = async () => {
-        const name = input.value.trim();
-        if (!/^[A-Za-z0-9._-]{1,32}$/.test(name)) { toast('Имя: латиница, цифры, точка, дефис, подчёркивание; до 32 знаков', true); return; }
-        btn.disabled = true; btn.textContent = 'Создаю…';
-        try {
-            const card = await AddClient(node, kind, name);
-            delete clientCache[node];
-            loadClients(node);
-            showCard(card, true);
-        } catch (e) {
-            toast(errText(e), true);
-            btn.disabled = false; btn.textContent = 'Добавить';
-        }
-    };
-    btn.addEventListener('click', add);
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') add(); });
-    const body = error
-        ? el('div', {class: 'muted'}, /модул/.test(error) ? 'Модуль не установлен на узле' : error)
-        : [el('ul', {}, names.length ? names.map((n) => el('li', {onclick: () => openCard(node, kind, n)}, n, el('span', {class: 'muted'}, '›')))
-                                     : el('li', {class: 'muted'}, 'пока никого')),
-           el('div', {class: 'add'}, input, btn)];
-    return el('div', {class: 'col'}, el('h3', {}, KIND[kind].title, el('span', {class: 'muted'}, names.length || '')),
-        el('div', {class: 'what'}, KIND[kind].what), body);
+function clientOpenButton(node, kind, name, label) {
+    return el('button', {class: 'ghost small', onclick: () => openCard(node, kind, name)}, label);
+}
+
+function clientForm(node, kinds) {
+    const input = el('input', {placeholder: 'Имя устройства', 'aria-label': 'Имя устройства', maxlength: '32', required: ''});
+    const select = el('select', {'aria-label': 'Тип подключения'}, kinds.map((kind) => el('option', {value: kind}, CLIENT_TYPES[kind])));
+    const button = el('button', {type: 'submit'}, 'Создать');
+    return el('form', {class: 'access-form', onsubmit: (e) => {
+        e.preventDefault();
+        addClient(node, select.value, input.value.trim(), button);
+    }}, input, select, button);
+}
+
+async function addClient(node, kind, name, button) {
+    const pattern = kind === 'awg' ? /^[A-Za-z0-9_-]{1,32}$/ : /^[A-Za-z0-9.-][A-Za-z0-9._-]{0,31}$/;
+    if (!pattern.test(name)) {
+        toast(kind === 'awg' ? 'Имя профиля: латиница, цифры, дефис и подчёркивание, до 32 знаков.'
+            : 'Имя: латиница, цифры, точка, дефис и подчёркивание, до 32 знаков. Первый символ не может быть подчёркиванием.', true);
+        return;
+    }
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Создаю…';
+    try {
+        const card = await AddClient(node, kind, name);
+        loadClients(node);
+        showCard(card, true);
+    } catch (e) {
+        toast(errText(e), true);
+        button.disabled = false;
+        button.textContent = label;
+    }
 }
 
 async function openCard(node, kind, name) {
@@ -411,6 +451,7 @@ function showCard(card, fresh) {
             amnezia.disabled = true;
             try {
                 showCard(await PublishSubAmnezia(card.node, card.name, publish), false);
+                loadClients(card.node);
             } catch (e) {
                 toast(errText(e), true);
                 amnezia.disabled = false;

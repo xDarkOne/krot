@@ -624,9 +624,14 @@ def main():
         return tg_mtproxyl(cmd, a)
     reg = "mtproto" if tg else "clients"
     if cmd == "list":
-        for n in sorted(load_users()[reg]):
-            if not n.startswith("_"):
-                print(n)
+        clients = load_users()[reg]
+        names = sorted(n for n in clients if not n.startswith("_"))
+        if not tg and a[1:] == ["--summary"]:
+            delivery = bool(env("sub"))
+            print(json.dumps({"names": names, "delivery": delivery,
+                              "published": [n for n in names if delivery and clients[n].get("amnezia")]}))
+        elif names:
+            print("\n".join(names))
         return
     commands = ("add", "del", "show") if tg else ("add", "del", "show", "amnezia-publish", "amnezia-unpublish")
     if len(a) != 2 or cmd not in commands:

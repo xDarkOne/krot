@@ -12,6 +12,7 @@ import {initAppUpdate, updateNow} from './appupdate.js';
 import {openAlerts} from './alerts.js';
 import {checkUpdates} from './updates.js';
 import {openVersions} from './versions.js';
+import {openDashboard} from './dashboard.js';
 
 const statusCache = {};   // узел → последний Status
 let state = {nodes: []};
@@ -315,8 +316,10 @@ function renderNode() {
     el('span', {class: 'server-host'}, node.host)));
     const info = el('section', {class: 'card server-info', 'aria-labelledby': 'server-info-title'},
         el('div', {class: 'server-info-head'}, el('h1', {id: 'server-info-title'}, 'Серверы'),
-            el('button', {class: 'ghost', disabled: st && st.busy ? '' : null, title: `Проверить ${n.name}`,
-                onclick: () => refreshStatus(n.name)}, st && st.busy ? 'Проверяю…' : 'Проверить')),
+            el('div', {class: 'server-info-actions'},
+                el('button', {class: 'ghost', onclick: () => openDashboard(state.nodes)}, 'Статистика'),
+                el('button', {class: 'ghost', disabled: st && st.busy ? '' : null, title: `Проверить ${n.name}`,
+                    onclick: () => refreshStatus(n.name)}, st && st.busy ? 'Проверяю…' : 'Проверить'))),
         el('div', {class: 'server-switcher', role: 'group', 'aria-label': 'Выбор сервера'}, buttons),
         statusContent(st));
     const blocks = [info];

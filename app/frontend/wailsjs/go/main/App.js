@@ -10,6 +10,14 @@ export function AddClient(arg1, arg2, arg3) {
   return window['go']['main']['App']['AddClient'](arg1, arg2, arg3);
 }
 
+export function ServerStatistics(arg1, arg2) {
+  return window['go']['main']['App']['ServerStatistics'](arg1, arg2);
+}
+
+export function RestartServer(arg1, arg2) {
+  return window['go']['main']['App']['RestartServer'](arg1, arg2);
+}
+
 export function AlertsApply() {
   return window['go']['main']['App']['AlertsApply']();
 }

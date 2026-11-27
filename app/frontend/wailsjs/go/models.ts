@@ -258,6 +258,17 @@ export namespace main {
 	        this.host = source["host"];
 	    }
 	}
+	export interface ServerStats {
+	    uptime: string;
+	    booted_at: number;
+	    uptime_seconds: number;
+	    interface: string;
+	    rx: number;
+	    tx: number;
+	    traffic: {at: number; bytes: Record<string, number>}[] | null;
+	    has_history: boolean;
+	    history_error: boolean;
+	}
 	export class State {
 	    inventory: string;
 	    nodes: NodeView[];

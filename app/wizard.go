@@ -486,6 +486,14 @@ func (a *App) Updates() ([]wizard.Step, error) {
 
 // ApplyUpdates — обновить отставшие модули по порядку каскада; ход — событиями "deploy-log".
 func (a *App) ApplyUpdates() error {
+	a.mu.Lock()
+	if a.updating || len(a.busy) != 0 {
+		a.mu.Unlock()
+		return fmt.Errorf("дождитесь окончания уже запущенной операции")
+	}
+	a.updating = true
+	a.mu.Unlock()
+	defer func() { a.mu.Lock(); a.updating = false; a.mu.Unlock() }()
 	inv, codes, err := a.installedCodes()
 	if err != nil {
 		return err

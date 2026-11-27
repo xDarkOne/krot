@@ -129,6 +129,35 @@ main { flex: 1; min-width: 0; overflow-y: auto; padding: 22px 26px 80px; }
 
 .server-info-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .server-info-head h1 { margin: 0; font-size: 20px; }
+.server-info-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.dashboard { display: grid; gap: 12px; }
+.dashboard-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.dashboard-head h2, .dashboard-head h3, .dashboard-section > h3 { margin: 0; }
+.dashboard-title { padding-right: 22px; }
+.dashboard-section, .dashboard-server { min-width: 0; border: 1px solid var(--line); border-radius: 9px; padding: 12px; }
+.dashboard-server { background: var(--panel); overflow-wrap: anywhere; }
+.dashboard-periods { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.dashboard-periods button[aria-pressed="false"] { background: var(--chip); border-color: var(--line); color: var(--text); }
+.dashboard-total { display: block; margin: 8px 0; font-size: 22px; }
+.dashboard-plot {
+    height: 126px; padding: 6px 7px 0; display: flex; gap: 3px; align-items: end;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--bg);
+}
+.dashboard-bar { flex: 1; height: 100%; display: flex; flex-direction: column-reverse; }
+.dashboard-bar span { border-radius: 2px 2px 0 0; }
+.dashboard-axis { display: flex; justify-content: space-between; gap: 3px; margin: 4px 2px; font-size: 11px; color: var(--muted); }
+.dashboard-legend, .dashboard-servers {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 244px), 1fr)); gap: 8px;
+    margin-top: 10px;
+}
+.dashboard-legend > div { display: flex; gap: 7px; align-items: center; }
+.dashboard-legend strong { margin-left: auto; }
+.dashboard-key { flex: 0 0 8px; height: 8px; border-radius: 2px; }
+.dashboard-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; margin: 8px 0 12px; }
+.dashboard-facts dt { color: var(--muted); }
+.dashboard-facts dd { margin: 0; }
+.dashboard-confirm { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 2px; }
+.dashboard-confirm p, .dashboard-server p { margin-block: 8px; }
 .server-switcher {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));

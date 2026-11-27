@@ -39,11 +39,12 @@ type App struct {
 	sec      *secrets.Store
 	pass     string // пароль хранилища, если оно не на ключе пульта (только в памяти)
 
-	askMu  sync.Mutex          // один вопрос за раз: параллельные проверки узлов ждут
-	asks   map[int]chan answer // открытые вопросы окну
-	askSeq int
-	known  map[string]string // ответы на вопросы о паролях (ключ) — только в памяти
-	busy   map[string]string // узел → модуль, который на нём сейчас ставится
+	askMu    sync.Mutex          // один вопрос за раз: параллельные проверки узлов ждут
+	asks     map[int]chan answer // открытые вопросы окну
+	askSeq   int
+	known    map[string]string // ответы на вопросы о паролях (ключ) — только в памяти
+	busy     map[string]string // узел → модуль, который на нём сейчас ставится
+	updating bool              // выполняется обновление модулей
 }
 
 type answer struct {
@@ -511,6 +512,10 @@ func (a *App) Install(node, module string) error {
 		return err
 	}
 	a.mu.Lock()
+	if a.updating {
+		a.mu.Unlock()
+		return fmt.Errorf("дождитесь окончания обновления модулей")
+	}
 	if m := a.busy[n.Name]; m != "" {
 		a.mu.Unlock()
 		return fmt.Errorf("на %s уже ставится %s — дождитесь окончания", n.Name, m)

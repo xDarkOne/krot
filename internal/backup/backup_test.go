@@ -28,8 +28,8 @@ mv "$BACKUP_DIR/new" "$BACKUP_DIR/node-1.tar.gz.age"`, "node-1.tar.gz.age"},
 else
     touch "$BACKUP_DIR/joined"
 fi`, "node-2.tar.gz.age"},
-		{"service returns without a new archive", "exit 0", ""},
-		{"service fails", "exit 1", ""},
+		{"service returns without a new archive", "return 0", ""},
+		{"service fails", "return 1", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()

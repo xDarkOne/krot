@@ -68,6 +68,7 @@ const usage = `krot (Крот) — развёртывание и обслужи�
   clients show|del <узел> <имя> | clients list <узел>  (AWG; del — без перезапуска входа)
   clients add|show|del <узел> <имя> --sub  клиент подписки (hysteria2, XHTTP, PQ): ссылка и QR
   clients amnezia-publish|amnezia-unpublish <узел> <имя> --sub  профиль одноимённого клиента AmneziaWG
+  clients add <узел> <имя> --combined  подписка с новым профилем AmneziaVPN
   clients list <узел> --sub
   clients add|show|del <узел> <имя> --tg   пользователь Telegram-прокси (MTProxy): ссылка и QR
   clients list <узел> --tg
@@ -781,7 +782,7 @@ func clientsCmd(ctx context.Context, invPath string, args []string) {
 	inv := mustInv(invPath)
 	sec := openSecrets(invPath)
 	iface := ""
-	sub, tg := false, false
+	sub, tg, combined := false, false, false
 	var rest []string
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--iface" && i+1 < len(args) {
@@ -797,6 +798,10 @@ func clientsCmd(ctx context.Context, invPath string, args []string) {
 			tg = true
 			continue
 		}
+		if args[i] == "--combined" {
+			combined = true
+			continue
+		}
 		rest = append(rest, args[i])
 	}
 	if len(rest) < 2 {
@@ -805,6 +810,17 @@ func clientsCmd(ctx context.Context, invPath string, args []string) {
 	n, err := inv.Node(rest[1])
 	if err != nil {
 		die("%v", err)
+	}
+	if combined {
+		if sub || tg || iface != "" || rest[0] != "add" || len(rest) != 3 {
+			die("clients add <узел> <имя> --combined")
+		}
+		c, err := clients.AddCombined(ctx, n, rest[2], sec, func(s string) { fmt.Println("  •", s) })
+		if err != nil {
+			die("%v", err)
+		}
+		printCard(clients.SubCardOf(n.Name, c))
+		return
 	}
 	if sub {
 		subClientsCmd(ctx, n, rest, sec)

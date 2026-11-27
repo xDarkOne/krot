@@ -184,6 +184,7 @@ export namespace main {
 	    tg: string[];
 	    published: string[];
 	    delivery: boolean | null;
+	    combined: boolean;
 	    errors: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
@@ -197,6 +198,7 @@ export namespace main {
 	        this.tg = source["tg"];
 	        this.published = source["published"];
 	        this.delivery = source["delivery"];
+	        this.combined = source["combined"];
 	        this.errors = source["errors"];
 	    }
 	}

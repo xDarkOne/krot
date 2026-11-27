@@ -31,12 +31,13 @@ import (
 // App — мост между окном и пакетами пульта. Вся логика та же, что у CLI krot:
 // приложение только показывает и спрашивает.
 type App struct {
-	ctx     context.Context
-	mu      sync.Mutex
-	invPath string
-	inv     *inventory.Inventory
-	sec     *secrets.Store
-	pass    string // пароль хранилища, если оно не на ключе пульта (только в памяти)
+	ctx      context.Context
+	mu       sync.Mutex
+	clientMu sync.Mutex
+	invPath  string
+	inv      *inventory.Inventory
+	sec      *secrets.Store
+	pass     string // пароль хранилища, если оно не на ключе пульта (только в памяти)
 
 	askMu  sync.Mutex          // один вопрос за раз: параллельные проверки узлов ждут
 	asks   map[int]chan answer // открытые вопросы окну
@@ -260,6 +261,7 @@ type ClientList struct {
 	TG        []string          `json:"tg"`
 	Published []string          `json:"published"`
 	Delivery  *bool             `json:"delivery"`
+	Combined  bool              `json:"combined"`
 	Errors    map[string]string `json:"errors"`
 }
 
@@ -288,6 +290,7 @@ func (a *App) Clients(name string) (ClientList, error) {
 		out.Errors["sub"] = err.Error()
 	} else {
 		out.Sub, out.Published, out.Delivery = summary.Names, summary.Published, summary.Delivery
+		out.Combined = summary.Combined
 	}
 	if _, l, err := clients.TGClient(a.ctx, n, "list", ""); err != nil {
 		out.Errors["tg"] = err.Error()
@@ -325,6 +328,19 @@ func (a *App) card(node, kind, name string, add bool) (CardView, error) {
 			return CardView{}, err
 		}
 		c = clients.AWGCard(n.Name, p)
+	case "combined":
+		if !add {
+			return CardView{}, fmt.Errorf("единое подключение открывается из карточки подписки")
+		}
+		sec, err := a.vault()
+		if err != nil {
+			return CardView{}, err
+		}
+		s, err := clients.AddCombined(a.ctx, n, name, sec, func(s string) { runtime.EventsEmit(a.ctx, "log", s) })
+		if err != nil {
+			return CardView{}, err
+		}
+		c = clients.SubCardOf(n.Name, s)
 	case "sub":
 		var s clients.SubCard
 		if add {
@@ -365,6 +381,8 @@ func saveCard(c clients.Card) (CardView, error) {
 
 // AddClient — новый клиент: ключи на узле, карточка с QR.
 func (a *App) AddClient(node, kind, name string) (CardView, error) {
+	a.clientMu.Lock()
+	defer a.clientMu.Unlock()
 	return a.card(node, kind, name, true)
 }
 
@@ -375,6 +393,8 @@ func (a *App) ShowClient(node, kind, name string) (CardView, error) {
 
 // PublishSubAmnezia добавляет или отзывает ссылку на профиль в карточке подписки.
 func (a *App) PublishSubAmnezia(node, name string, publish bool) (CardView, error) {
+	a.clientMu.Lock()
+	defer a.clientMu.Unlock()
 	n, err := a.node(node)
 	if err != nil {
 		return CardView{}, err
@@ -395,6 +415,8 @@ func (a *App) PublishSubAmnezia(node, name string, publish bool) (CardView, erro
 
 // DelClient — удалить клиента: доступ пропадает сразу, у остальных ничего не рвётся.
 func (a *App) DelClient(node, kind, name string) error {
+	a.clientMu.Lock()
+	defer a.clientMu.Unlock()
 	n, err := a.node(node)
 	if err != nil {
 		return err

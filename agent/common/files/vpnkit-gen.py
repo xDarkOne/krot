@@ -13,6 +13,7 @@
   del <имя>        удалить клиента (его подписка перестаёт отвечать)
   show <имя>       JSON со ссылками клиента
   amnezia-publish <имя>   опубликовать профиль vpn:// из stdin
+  add-amnezia <имя>       создать подписку с профилем vpn:// из stdin
   amnezia-unpublish <имя> убрать ссылку на профиль
   list             имена клиентов
   tg-add|tg-del|tg-show <имя>, tg-list   то же для пользователей MTProxy (telemt)
@@ -640,6 +641,53 @@ def remove_amnezia_files(profile, s):
                     pass
 
 
+def new_subscription():
+    return {"uuid": str(uuid.uuid4()), "token": secrets.token_hex(16),
+            "hy2": secrets.token_urlsafe(16), "created": datetime.date.today().isoformat()}
+
+
+def add_amnezia(name, u):
+    s = env("sub")
+    if not s:
+        sys.exit("нет модуля subscriptions")
+    link = sys.stdin.read(16385).strip()
+    if not amnezia_share_link(name, {"link": link}):
+        sys.exit("ожидалась ссылка vpn:// с профилем AmneziaWG от Крота")
+    clients = u["clients"]
+    if name in clients:
+        # Повтор после обрыва SSH может вернуть карточку только для того же профиля.
+        if clients[name].get("amnezia", {}).get("link") == link:
+            result = card(name, u)
+            if result.get("compat_url"):
+                return result
+        sys.exit(f"клиент {name} уже есть")
+
+    c = new_subscription()
+    c["amnezia"] = {"token": secrets.token_hex(16), "link": link, "feed_token": secrets.token_hex(16)}
+    clients[name] = c
+    save_users(u)
+    try:
+        build(quiet=True)
+        result = card(name, u)
+        if not result.get("compat_url"):
+            sys.exit("не удалось сформировать единую подписку")
+        return result
+    except (Exception, SystemExit):
+        try:
+            restored = load_users()
+            del restored["clients"][name]
+            save_users(restored)
+            remove_amnezia_files(c["amnezia"], s)
+            try:
+                os.unlink(os.path.join(s["OUTDIR"], c["token"]))
+            except FileNotFoundError:
+                pass
+            build(quiet=True)
+        except (Exception, SystemExit) as rollback_error:
+            print(f"не удалось завершить откат подписки: {rollback_error}", file=sys.stderr)
+        raise
+
+
 def publish_amnezia(cmd, name, u):
     s = env("sub")
     if not s:
@@ -684,12 +732,13 @@ def main():
         names = sorted(n for n in clients if not n.startswith("_"))
         if not tg and a[1:] == ["--summary"]:
             delivery = bool(env("sub"))
-            print(json.dumps({"names": names, "delivery": delivery,
+            print(json.dumps({"names": names, "delivery": delivery, "combined": True,
                               "published": [n for n in names if delivery and clients[n].get("amnezia")]}))
         elif names:
             print("\n".join(names))
         return
-    commands = ("add", "del", "show") if tg else ("add", "del", "show", "amnezia-publish", "amnezia-unpublish")
+    commands = ("add", "del", "show") if tg else (
+        "add", "add-amnezia", "del", "show", "amnezia-publish", "amnezia-unpublish")
     if len(a) != 2 or cmd not in commands:
         sys.exit("использование: vpnkit-gen.py build | [tg-]list | [tg-]add|del|show <имя>")
     name = a[1]
@@ -702,12 +751,14 @@ def main():
         if tg:
             u[reg][name] = secrets.token_hex(16)
         else:
-            u[reg][name] = {"uuid": str(uuid.uuid4()), "token": secrets.token_hex(16),
-                            "hy2": secrets.token_urlsafe(16),
-                            "created": datetime.date.today().isoformat()}
+            u[reg][name] = new_subscription()
         save_users(u)
         build(quiet=True)
         print(json.dumps(tg_link(name, u, m) if tg else card(name, u), ensure_ascii=False))
+    elif cmd == "add-amnezia":
+        if not re.fullmatch(r"[A-Za-z0-9-][A-Za-z0-9_-]{0,31}", name):
+            sys.exit("имя AmneziaWG: латиница, цифры, _ и -, до 32 знаков, не с «_»")
+        print(json.dumps(add_amnezia(name, u), ensure_ascii=False))
     elif cmd.startswith("amnezia-"):
         if name not in u[reg]:
             sys.exit(f"клиента {name} нет")

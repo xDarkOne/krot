@@ -3,9 +3,12 @@ package clients
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/xDarkOne/krot/internal/inventory"
 	"github.com/xDarkOne/krot/internal/remote"
@@ -91,6 +94,62 @@ func SubAdd(ctx context.Context, n *inventory.Node, name string) (SubCard, error
 	return subCard(out)
 }
 
+// AddCombined creates one device's AWG peer and publishes it with the new subscription.
+func AddCombined(ctx context.Context, n *inventory.Node, name string, sec *secrets.Store, log func(string)) (SubCard, error) {
+	if !nameRe.MatchString(name) || strings.HasPrefix(name, "_") {
+		return SubCard{}, fmt.Errorf("имя: латиница, цифры, _ и -, до 32 знаков, не с «_»")
+	}
+	summary, err := GetSubSummary(ctx, n)
+	if err != nil {
+		return SubCard{}, err
+	}
+	if !summary.Combined || summary.Delivery == nil || !*summary.Delivery {
+		return SubCard{}, fmt.Errorf("установите или обновите модуль subscriptions на узле %s", n.Name)
+	}
+	if slices.Contains(summary.Names, name) {
+		return SubCard{}, fmt.Errorf("подписка %s уже есть", name)
+	}
+	p, err := Add(ctx, n, "", name, sec, log)
+	if err != nil {
+		return SubCard{}, err
+	}
+	c, err := publishNewSubscription(ctx, n, p)
+	if err == nil {
+		return c, nil
+	}
+
+	// Проверьте реестр после обрыва SSH, прежде чем отзывать созданный пир.
+	recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancel()
+	summary, checkErr := GetSubSummary(recovery, n)
+	if checkErr != nil {
+		return SubCard{}, errors.Join(err, fmt.Errorf("не удалось проверить подписку; профиль AmneziaVPN сохранён: %w", checkErr))
+	}
+	if slices.Contains(summary.Names, name) {
+		c, retryErr := publishNewSubscription(recovery, n, p)
+		if retryErr != nil {
+			return SubCard{}, fmt.Errorf("не удалось подтвердить единую подписку; профиль AmneziaVPN сохранён: %w", retryErr)
+		}
+		return c, nil
+	}
+	if cleanupErr := Del(recovery, n, "", name, sec, log); cleanupErr != nil {
+		return SubCard{}, errors.Join(err, fmt.Errorf("не удалось отозвать профиль AmneziaVPN: %w", cleanupErr))
+	}
+	return SubCard{}, fmt.Errorf("подписка не создана, профиль AmneziaVPN отозван: %w", err)
+}
+
+func publishNewSubscription(ctx context.Context, n *inventory.Node, p Profile) (SubCard, error) {
+	out, err := genWithInput(ctx, n, p.Link+"\n", "add-amnezia", p.Name)
+	if err != nil {
+		return SubCard{}, err
+	}
+	c, err := subCard(out)
+	if err == nil && (c.Name != p.Name || c.SubURL == "" || c.CompatURL == "" || c.AmneziaURL == "") {
+		err = fmt.Errorf("узел не вернул все ссылки единой подписки")
+	}
+	return c, err
+}
+
 // SubShow — карточка существующего клиента.
 func SubShow(ctx context.Context, n *inventory.Node, name string) (SubCard, error) {
 	if !subName.MatchString(name) {
@@ -126,6 +185,7 @@ type SubSummary struct {
 	Names     []string `json:"names"`
 	Published []string `json:"published"`
 	Delivery  *bool    `json:"delivery"`
+	Combined  bool     `json:"combined"`
 }
 
 func GetSubSummary(ctx context.Context, n *inventory.Node) (SubSummary, error) {

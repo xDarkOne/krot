@@ -20,7 +20,7 @@ let current = null;
 EventsOn('log', (s) => toast(s));
 
 const ROLE = {entry: 'вход', exit: 'выход', solo: 'один сервер'};
-const CLIENT_TYPES = {awg: 'Профиль AmneziaVPN', sub: 'Подписка', tg: 'Прокси Telegram'};
+const CLIENT_TYPES = {combined: 'Подписка + профиль AmneziaVPN', awg: 'Профиль AmneziaVPN', sub: 'Подписка', tg: 'Прокси Telegram'};
 
 // ---- список узлов ---------------------------------------------------------
 
@@ -356,6 +356,7 @@ function clientsCard(node) {
     const published = new Set(c.published || []);
     const names = [...new Set([...subs, ...awg])].sort((a, b) => a.localeCompare(b));
     const kinds = ['sub', 'awg'].filter((kind) => !errors[kind]);
+    if (c.combined && c.delivery && kinds.length === 2) kinds.unshift('combined');
     const feeds = el('div', {class: 'access-formats'},
         el('div', {}, el('strong', {}, 'Подписка'), el('span', {}, 'VLESS XHTTP · VLESS PQ · Hysteria2')),
         el('div', {}, el('strong', {}, 'AmneziaWG'), el('span', {}, 'В единой подписке для INCY на iOS и Android')));
@@ -379,7 +380,7 @@ function clientsCard(node) {
                     hasAWG ? clientOpenButton(node, 'awg', name, 'Открыть профиль') : null,
                     !hasAWG && hasSub && !errors.awg && /^[A-Za-z0-9_-]{1,32}$/.test(name)
                         ? el('button', {class: 'ghost small', onclick: (e) => addClient(node, 'awg', name, e.currentTarget)}, 'Создать профиль') : null));
-        }) : el('p', {class: 'muted access-empty'}, 'Устройств пока нет. Создайте подписку или профиль AmneziaWG.'));
+        }) : el('p', {class: 'muted access-empty'}, 'Устройств пока нет.'));
     return el('div', {class: 'card access-card'}, head, feeds, table,
         errors.sub ? el('p', {class: 'muted'}, errors.sub) : null,
         errors.awg ? el('p', {class: 'muted'}, errors.awg) : null,
@@ -406,10 +407,13 @@ function clientForm(node, kinds) {
 }
 
 async function addClient(node, kind, name, button) {
-    const pattern = kind === 'awg' ? /^[A-Za-z0-9_-]{1,32}$/ : /^[A-Za-z0-9.-][A-Za-z0-9._-]{0,31}$/;
+    const pattern = kind === 'combined' ? /^[A-Za-z0-9-][A-Za-z0-9_-]{0,31}$/
+        : kind === 'awg' ? /^[A-Za-z0-9_-]{1,32}$/ : /^[A-Za-z0-9.-][A-Za-z0-9._-]{0,31}$/;
     if (!pattern.test(name)) {
-        toast(kind === 'awg' ? 'Имя профиля: латиница, цифры, дефис и подчёркивание, до 32 знаков.'
-            : 'Имя: латиница, цифры, точка, дефис и подчёркивание, до 32 знаков. Первый символ не может быть подчёркиванием.', true);
+        const message = kind === 'combined' ? 'Имя: латиница, цифры, дефис и подчёркивание, до 32 знаков. Первый символ не может быть подчёркиванием.'
+            : kind === 'awg' ? 'Имя профиля: латиница, цифры, дефис и подчёркивание, до 32 знаков.'
+                : 'Имя: латиница, цифры, точка, дефис и подчёркивание, до 32 знаков. Первый символ не может быть подчёркиванием.';
+        toast(message, true);
         return;
     }
     const label = button.textContent;

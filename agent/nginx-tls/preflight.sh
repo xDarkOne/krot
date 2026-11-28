@@ -1,5 +1,5 @@
 # nginx-tls: до изменений — имена смотрят на этот узел, порты не заняты чужими.
-: "${VK_NAMES:?}" "${VK_HOST:?}" "${VK_ROLE:?}" "${VK_XHTTP_PORT:=4443}"
+: "${VK_NAMES:?}" "${VK_HOST:?}" "${VK_ROLE:?}" "${VK_XHTTP_PORT:=443}"
 bad=0
 for n in $VK_NAMES; do
   a=$(getent ahostsv4 "$n" | awk '{print $1}' | sort -u | tr '\n' ' ')
@@ -8,7 +8,7 @@ for n in $VK_NAMES; do
     *) echo "  ✗ $n указывает на «${a:-ничего}», а не на $VK_HOST: сертификат не выпустится" >&2; bad=1 ;;
   esac
 done
-ports="80 443"; [ "$VK_ROLE" = exit ] || ports="$ports $VK_XHTTP_PORT"
+ports="80 443"; [ "$VK_ROLE" != exit ] && [ "$VK_XHTTP_PORT" != 443 ] && ports="$ports $VK_XHTTP_PORT"
 for p in $ports; do
   l=$(ss -Hltnp "sport = :$p")   # P-47: без совпадений grep под pipefail валит шаг
   who=$(grep -o 'users:(("[^"]*"' <<<"$l" | cut -d'"' -f2 | sort -u | tr '\n' ' ' || true)

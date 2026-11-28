@@ -1,41 +1,55 @@
-# Пример inventory: каскад — вход в России, выход за границей (topology: cascade).
-# Скопируйте в inventory.yaml и поправьте адреса, имена узлов и домен. Секретов здесь нет —
-# ключи и пароли пульт создаёт сам и хранит в secrets.age рядом (krot secrets init --key).
-# Что можно поставить и что включено по умолчанию: krot catalog cascade
+# Пример inventory: готовый защищённый каскад (Россия → заграница, topology: cascade).
+# Скопируйте в inventory.yaml и подставьте свои IP, домен и путь к SSH-ключам.
+# Секреты (ключи AWG, VLESS, пароли, токены) здесь не хранятся — пульт создаёт их сам
+# в зашифрованном secrets.age (krot secrets init --key).
+#
+# Особенности этого профиля (best practices):
+#   - XHTTP работает на стандартном TCP/443 (через nginx SNI stream, порт 4443 не торчит наружу);
+#   - каскад awg0 и клиентский вход awg2 используют AmneziaWG 3.1 на случайных высоких UDP-портах;
+#   - Hysteria2 (sing-box 1.14.6) на UDP/443, MTProxyL (v1.8.7 / telemt 3.5.17) на TCP/443 + WEB Proxy;
+#   - Cloudflare DNS создаётся с TTL 60с для быстрого переезда при блокировке IP;
+#   - включены conntrack 65536, увеличенные UDP-буферы, panic=10, бэкапы + vpnkit-restore.sh и relocate + vpnkit-dns.
+#
+# Список всех модулей и умолчаний: krot catalog cascade
 version: 1
 topology: cascade
 domain: example.org
 
 nodes:
-  ru:                                    # вход: к нему подключаются устройства
+  ru:                                    # вход (РФ): к нему подключаются все клиенты
     host: 203.0.113.10
     role: entry
     ssh: {user: root, port: 22, auth: key, key: ~/.krot/keys/ru_ed25519}
     modules:
-      nginx-tls: {names: [es.example.org, ru.example.org, web.example.org], tunnel_name: es.example.org}
+      nginx-tls:
+        names: [es.example.org, ru.example.org, web.example.org]
+        tunnel_name: es.example.org      # VLESS XHTTP (:443 через SNI) + Hysteria2 (UDP/443)
+        # xhttp_port: 443                # по умолчанию 443 (можно сменить на 4443 при необходимости)
       subscriptions: {sub_name: ru.example.org}
       mtproxy: {mask_name: ru.example.org, web_name: web.example.org}
-      # Для профиля «Полный каскад» раскомментируйте нужные строки:
-      # client-awg: {port: 51822}
-      # client-awg-legacy: {enabled: true, port: 51820}
-      # client-wireguard: {enabled: true, port: 51821}
+      # Рекомендуемые дополнения (раскомментируйте нужное):
+      # vpn-bot: {enabled: true}         # Telegram-бот управления (токен задаётся через krot alerts set)
+      # vpn-panel: {enabled: true}       # веб-панель статистики и клиентов
+      # hysteria2: {per_client: true}    # учёт трафика Hysteria2 по каждому клиенту
+      # aivpn: {enabled: true}           # дополнительный транспорт AIVPN
+      # csqtt: {enabled: true}           # дополнительный транспорт CSQTT
+      # exit-socks: {enabled: true}
+      # Устаревшие/опциональные профили (обычно не требуются для новой установки):
+      # client-awg-legacy: {enabled: true}
+      # client-wireguard: {enabled: true}
       # vk-turn-proxy: {enabled: true}
-      # aivpn: {enabled: true}
-      # csqtt: {enabled: true}
-      # hysteria2: {per_client: true}
-      # vpn-bot: {enabled: true}       # настройте своего бота через krot alerts set
-      # vpn-panel: {enabled: true}
-  eu:                                    # выход: через него зарубежный трафик уходит в интернет
+
+  eu:                                    # выход (заграница): выпускает трафик в интернет
     host: 198.51.100.20
     role: exit
     ssh: {user: root, port: 22, auth: key, key: ~/.krot/keys/eu_ed25519}
-    # если выход не виден с этого компьютера — ходить к нему через вход:
+    # если выход недоступен напрямую с ПК — ходить к нему через вход:
     # ssh: {user: root, port: 22, auth: key, key: ~/.krot/keys/eu_ed25519,
     #       jump: {host: 203.0.113.10, user: root, key: ~/.krot/keys/ru_ed25519}}
     modules:
       cascade-awg0:
-        # exit_ipv6: "2001:db8::20"         # замените на глобальный IPv6 выхода или удалите строку
-        reality_server_name: ""          # укажите имя доступного с exit внешнего TLS 1.3 / HTTP/2 сайта
-        reality_port: 24443              # TCP для резерва, отдельно от веб-витрины на 443
-      # exit-socks: {enabled: true}
-      nginx-tls: {names: [en.example.org]}   # витрина выхода (по желанию)
+        # port: 43819                    # по умолчанию генерируется случайный UDP-порт 20000–60000 (не 51820)
+        # exit_ipv6: "2001:db8::20"      # глобальный IPv6 выхода для резервного пути awg0 (опционально)
+        reality_server_name: ""          # имя доступного с exit внешнего TLS 1.3 / HTTP/2 сайта для TCP-резерва sbtun
+        reality_port: 24443              # TCP-порт резерва (отдельно от веб-витрины на 443)
+      nginx-tls: {names: [en.example.org]}   # витрина выхода

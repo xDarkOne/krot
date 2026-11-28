@@ -44,6 +44,7 @@ files:
 - /etc/systemd/system/nftables.service.d/10-vpnkit-no-flush.conf
 - /etc/sysctl.d/99-vpnkit.conf
 - /etc/sysctl.d/99-vpnkit-conntrack.conf
+- /etc/default/grub.d/98-vpnkit-panic.cfg
 - /etc/modules-load.d/vpnkit-conntrack.conf
 - /etc/fail2ban/jail.d/vpnkit.conf
 - /etc/apt/apt.conf.d/20auto-upgrades

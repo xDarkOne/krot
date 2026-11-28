@@ -1,22 +1,24 @@
 #!/bin/bash
-# vpnkit-reip: после клонирования узла на другой адрес переписывает прошитые IP.
+# vpnkit-reip: после клонирования узла на другой адрес переписывает прошитые IP (IPv4 и IPv6).
 # Запускается на КАЖДОМ узле с одним и тем же набором --map (свой адрес, адрес соседа, шлюз).
 #   vpnkit-reip --map СТАРЫЙ НОВЫЙ [--map ...]          показать, что изменится (ничего не пишет)
 #   vpnkit-reip --map СТАРЫЙ НОВЫЙ [--map ...] --apply  изменить, перезапустить службы, проверить
 # Пример: --map 203.0.113.10 198.51.100.7 --map 203.0.113.1 198.51.100.1
-# Сетевую маску (/24) скрипт не трогает: если она другая, поправь /etc/network/interfaces руками.
+# IPv6-подсеть задаётся адресом сети: --map 2001:db8:1:: 2001:db8:2::
 # Сеть (networking) не перезапускается, чтобы не оборвать ssh: адрес вступит в силу после reboot.
+# REIP_ROOT=каталог — проверка на копии: файлы берутся из каталога, службы и сеть не трогаются.
 set -u
+ROOT=${REIP_ROOT:-}
 # Файлы Крота, где прошиты адреса. Свои добавляйте по одному пути в строке в /etc/vpnkit/reip.extra.
-FILES="/etc/network/interfaces /etc/hosts /etc/vpnkit/*.conf /etc/vpnkit/cascade/*.json /etc/traffic-guard.exempt
-/etc/amnezia/amneziawg/*.conf /etc/wireguard/*.conf /etc/sing-box/*.json /etc/telemt/telemt.toml
-/etc/nftables.d/*.nft $(cat /etc/vpnkit/reip.extra 2>/dev/null)"
-UNITS="awg-quick@awg0 awg-quick@awg1 awg-quick@awg2 traffic-guard telemt sing-box xray warp-ru nginx
-vpnkit-cascade-xray vpnkit-cascade-tun vpnkit-cascade-watch"
+FILES="/etc/network/interfaces /etc/network/interfaces.d/ipv6-link /etc/hosts /etc/vpnkit/*.conf /etc/vpnkit/cascade/*.json /etc/traffic-guard.exempt
+/etc/amnezia/amneziawg/*.conf /etc/wireguard/*.conf /etc/sing-box/*.json /etc/telemt/telemt.toml /opt/mtproxyl/mtproxy/telemt.toml
+/etc/aivpn/server.json /etc/nftables.conf /etc/nftables.d/*.nft /var/lib/vpnkit/node.addr $(cat /etc/vpnkit/reip.extra 2>/dev/null)"
+UNITS="awg-quick@awg0 awg-quick@awg1 awg-quick@awg2 traffic-guard telemt mtproxyl-telemt sing-box xray warp-ru nginx
+vpnkit-cascade-xray vpnkit-cascade-tun vpnkit-cascade-watch aivpn-server"
 OLD=(); NEW=(); APPLY=0
 while [ $# -gt 0 ]; do
   case $1 in
-    --map) OLD+=("$2"); NEW+=("$3"); shift 3;;
+    --map) [ $# -ge 3 ] || { sed -n 2,9p "$0"; exit 2; }; OLD+=("$2"); NEW+=("$3"); shift 3;;
     --apply) APPLY=1; shift;;
     *) echo "неизвестный аргумент: $1"; sed -n 2,9p "$0"; exit 2;;
   esac
@@ -24,35 +26,106 @@ done
 [ ${#OLD[@]} -gt 0 ] || { sed -n 2,9p "$0"; exit 2; }
 for i in "${!OLD[@]}"; do
   for v in "${OLD[$i]}" "${NEW[$i]}"; do
-    [[ $v =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || { echo "не IPv4: $v"; exit 2; }
+    python3 -c 'import ipaddress,sys; ipaddress.ip_address(sys.argv[1])' "$v" 2>/dev/null || { echo "не IPv4/IPv6: $v"; exit 2; }
   done
 done
-TS=$(date +%Y%m%d-%H%M%S); BAK=/root/reip-bak-$TS; changed=0
-for f in $FILES; do
-  [ -f "$f" ] || continue
-  for i in "${!OLD[@]}"; do
-    if grep -qP "(?<![\d.])${OLD[$i]//./\\.}(?!\d)" "$f"; then
-      echo "$f: ${OLD[$i]} -> ${NEW[$i]} ($(grep -cP "(?<![\d.])${OLD[$i]//./\\.}(?!\d)" "$f") стр.)"
-      if [ $APPLY = 1 ]; then
-        mkdir -p "$BAK$(dirname "$f")"; [ -e "$BAK$f" ] || cp -a "$f" "$BAK$f"
-        perl -pi -e "s/(?<![\\d.])${OLD[$i]//./\\.}(?!\\d)/${NEW[$i]}/g" "$f"
-      fi
-      changed=1
-    fi
-  done
-done
-[ $changed = 0 ] && echo "ни в одном файле старых адресов не найдено"
+TS=$(date +%Y%m%d-%H%M%S); BAK=$ROOT/root/reip-bak-$TS
+CH=$(mktemp); trap 'rm -f "$CH"' EXIT
+MAPS=""; for i in "${!OLD[@]}"; do MAPS+="${OLD[$i]}"$'\t'"${NEW[$i]}"$'\n'; done
+
+REIP_MAPS="$MAPS" REIP_CHANGED="$CH" python3 - "$APPLY" "$BAK" "$ROOT" $FILES <<'PY'
+import glob, ipaddress, os, re, shutil, sys
+apply_, bak, root = sys.argv[1] == "1", sys.argv[2], sys.argv[3]
+patterns = sys.argv[4:]
+files = []
+seen = set()
+for pat in patterns:
+    full = root + pat
+    matches = sorted(glob.glob(full)) if any(c in pat for c in "*?[") else [full]
+    for m in matches:
+        if os.path.isfile(m):
+            rel = m[len(root):] if root and m.startswith(root) else m
+            if rel not in seen:
+                seen.add(rel)
+                files.append((rel, os.path.realpath(m)))
+
+v4, v6 = {}, {}
+for l in os.environ["REIP_MAPS"].splitlines():
+    if not l:
+        continue
+    o, n = l.split("\t")
+    a = ipaddress.ip_address(o)
+    if a.version == 4:
+        v4[o] = n
+    else:
+        v6[str(a)] = (o, n)
+re4 = re.compile("|".join("(?<![\\d.])" + re.escape(o) + "(?!\\d)" for o in sorted(v4, key=len, reverse=True))) if v4 else None
+re6 = re.compile(r"(?<![0-9A-Fa-f:.])[0-9A-Fa-f]*:[0-9A-Fa-f:]*(?![0-9A-Fa-f:])")
+changed_files = []
+for f, p in files:
+    raw = open(p, encoding="utf-8", errors="surrogateescape").read()
+    lines = raw.splitlines(keepends=True)
+    cnt, out = {}, []
+    for ln in lines:
+        hit = []
+        def s4(m):
+            hit.append(m.group(0)); return v4[m.group(0)]
+        def s6(m):
+            try:
+                k = str(ipaddress.ip_address(m.group(0)))
+            except ValueError:
+                return m.group(0)
+            if k in v6:
+                hit.append(v6[k][0]); return v6[k][1]
+            return m.group(0)
+        nl = re4.sub(s4, ln) if re4 else ln
+        if v6:
+            nl = re6.sub(s6, nl)
+        for h in set(hit):
+            cnt[h] = cnt.get(h, 0) + 1
+        out.append(nl)
+    for h, c in cnt.items():
+        new = v4.get(h) or next(n for (o, n) in v6.values() if o == h)
+        print(f"{f}: {h} -> {new} ({c} стр.)")
+    if cnt:
+        changed_files.append(f)
+        if apply_:
+            b = bak + f
+            os.makedirs(os.path.dirname(b), exist_ok=True)
+            if not os.path.exists(b):
+                shutil.copy2(p, b)
+            tmp = p + ".reip-tmp"
+            with open(tmp, "w", encoding="utf-8", errors="surrogateescape") as w:
+                w.write("".join(out))
+            shutil.copymode(p, tmp)
+            try:
+                st = os.stat(p); os.chown(tmp, st.st_uid, st.st_gid)
+            except PermissionError:
+                pass
+            os.replace(tmp, p)
+if not changed_files:
+    print("ни в одном файле старых адресов не найдено")
+open(os.environ["REIP_CHANGED"], "w").write("\n".join(changed_files) + "\n")
+PY
+rc=$?; [ $rc = 0 ] || { echo "ОШИБКА переписывания файлов (код $rc)"; exit 1; }
 [ $APPLY = 1 ] || { echo "(пробный прогон: ничего не изменено; добавь --apply)"; exit 0; }
+[ -z "$ROOT" ] || { echo "копии прежних файлов: $BAK (REIP_ROOT: службы и сеть не трогаю)"; exit 0; }
 echo "копии прежних файлов: $BAK"
+
+# кэш публичного адреса WEB (MTProxyL 1.7+): сбрасываем, чтобы не вернулся старый IP
+[ -f /opt/mtproxyl/.web-public-ip ] && rm -f /opt/mtproxyl/.web-public-ip && echo "сброшен кэш WEB-адреса MTProxyL"
+
 for u in $UNITS; do
   systemctl is-enabled --quiet "$u" 2>/dev/null || continue
   systemctl restart "$u" && echo "перезапущен $u" || echo "ОШИБКА перезапуска $u"
 done
+
 echo "--- проверка"
-DEV=$(ip -4 route show default | awk '{for(i=1;i<NF;i++) if($i=="dev") {print $(i+1); exit}}')
-IFACE_IP=$(ip -4 -br a show "$DEV" | awk '{print $3}')
-echo "адрес $DEV сейчас: $IFACE_IP (в /etc/network/interfaces: $(awk '$1=="address"{print $2}' /etc/network/interfaces))"
-PEER_TUN=$(awk -F= '$1=="PEER_TUN"{print $2}' /etc/vpnkit/watch.conf)
+DEV=$(ip -4 route show default 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="dev") {print $(i+1); exit}}')
+DEV=${DEV:-eth0}
+IFACE_IP=$(ip -4 -br a show "$DEV" 2>/dev/null | awk '{print $3}')
+echo "адрес $DEV сейчас: $IFACE_IP (в /etc/network/interfaces: $(awk '$1=="address"{print $2}' /etc/network/interfaces 2>/dev/null))"
+PEER_TUN=$(awk -F= '$1=="PEER_TUN"{print $2}' /etc/vpnkit/watch.conf 2>/dev/null)
 [ -n "$PEER_TUN" ] && { ping -c2 -W3 "$PEER_TUN" >/dev/null 2>&1 && echo "туннель до $PEER_TUN: ок" || echo "туннель до $PEER_TUN: НЕТ (соседу тоже нужен запуск с теми же --map)"; }
 systemctl is-active --quiet vpnkit-watch.timer && /usr/local/sbin/vpnkit-watch.sh >/dev/null 2>&1 && echo "vpnkit-watch: ок"
-echo "Дальше: поменять DNS-записи на новый адрес, при смене сети — reboot."
+echo "Дальше: поменять DNS-записи на новый адрес (или настроить /etc/vpnkit/cloudflare.conf для vpnkit-dns), при смене сети — reboot."

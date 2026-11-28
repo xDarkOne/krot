@@ -191,7 +191,8 @@ def xray_config(u, x, h=None):
         "inbounds": [
             {"tag": "xh-in", "listen": "127.0.0.1", "port": int(x["XH_PORT"]), "protocol": "vless",
              "settings": {"clients": clients, "decryption": "none"},
-             "streamSettings": {"network": "xhttp", "security": "none", "xhttpSettings": {"path": x["XH_PATH"]}},
+             "streamSettings": {"network": "xhttp", "security": "none", "xhttpSettings": {"path": x["XH_PATH"]},
+                                "sockopt": {"trustedXForwardedFor": ["X-Forwarded-For"]}},
              "sniffing": SNIFFING},
             {"tag": "enc-in", "listen": "0.0.0.0", "port": int(x["ENC_PORT"]), "protocol": "vless",
              "settings": {"clients": clients, "decryption": u["vlessenc"]["decryption"]},
@@ -364,22 +365,27 @@ TELEMT_CONF = "/etc/telemt/telemt.toml"
 TELEMT_STATIC = "/var/lib/vpnkit/telemt.static.sha256"
 
 
-def stream_conf(m):
-    """TCP/443 на entry. Без MTProxy — всё на витрину; с ним — всё в telemt (PROXY protocol
-    несёт адрес клиента), а не-Telegram клиентов telemt сам отдаёт витрине (маска).
-    У MTProxyL с WEB Proxy его домен уходит в TLS-сервер nginx (WEB_TLS_PORT), оттуда в WEB-вход."""
-    web = ""
+def stream_conf(m, n=None):
+    """TCP/443 на entry. Без MTProxy — всё на витрину 127.0.0.1:8444 (где живёт и XHTTP:443);
+    с MTProxy — default идёт в telemt (PROXY protocol несёт адрес клиента), WEB_DOMAIN — в WEB Proxy,
+    а TUNNEL_NAME (при XHTTP_PORT=443) — на петлевой 127.0.0.1:4444 (ssl proxy_protocol)."""
+    routes = ""
     if m:
         target, pp = f"127.0.0.1:{m['LISTEN_PORT']}", "    proxy_protocol on;\n"
-        note = "всё — в telemt (MTProxy); чужих он отдаёт витрине 127.0.0.1:8444"
+        note = "default — в telemt (MTProxy); чужих он отдаёт витрине 127.0.0.1:8444"
         if m.get("BACKEND") == "mtproxyl" and m.get("WEB_DOMAIN"):
-            web = f"    {m['WEB_DOMAIN']} 127.0.0.1:{m.get('WEB_TLS_PORT', '15444')};\n"
+            routes += f"    {m['WEB_DOMAIN']} 127.0.0.1:{m.get('WEB_TLS_PORT', '15444')};\n"
             note += f"; {m['WEB_DOMAIN']} — WEB Proxy"
+        tn = (n or {}).get("TUNNEL_NAME", "")
+        xp = (n or {}).get("XHTTP_PORT", "")
+        if tn and xp == "443" and tn != m.get("WEB_DOMAIN", "") and tn != m.get("TLS_DOMAIN", ""):
+            routes += f"    {tn} 127.0.0.1:4444;\n"
+            note += f"; {tn} — XHTTP:443"
     else:
         target, pp, note = "127.0.0.1:8444", "", "всё — на витрину 127.0.0.1:8444"
     return (f"# vpnkit: TCP/443 по имени из ClientHello. Пишет vpnkit-gen.py — руками не править.\n"
             f"# Сейчас {note}.\n"
-            f"map $ssl_preread_server_name $vpnkit_443 {{\n{web}    default {target};\n}}\n"
+            f"map $ssl_preread_server_name $vpnkit_443 {{\n{routes}    default {target};\n}}\n"
             f"server {{\n    listen 443;\n    ssl_preread on;\n    proxy_pass $vpnkit_443;\n{pp}"
             f"    proxy_connect_timeout 10s;\n}}\n")
 
@@ -388,7 +394,7 @@ def apply_stream(m):
     n = env("nginx")
     if not n or n.get("STREAM") != "1":
         return ""
-    data = stream_conf(m)
+    data = stream_conf(m, n)
     if os.path.exists(STREAM_CONF) and open(STREAM_CONF).read() == data:
         return ""
     old = open(STREAM_CONF).read() if os.path.exists(STREAM_CONF) else None

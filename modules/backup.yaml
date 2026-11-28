@@ -37,6 +37,7 @@ units:
 - vpnkit-backup.service
 files:
 - /usr/local/sbin/vpnkit-backup.sh
+- /usr/local/sbin/vpnkit-restore.sh
 - /etc/vpnkit/backup.conf
 - /etc/vpnkit/backup.recipients
 - /var/backups/vpnkit/

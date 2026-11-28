@@ -1,5 +1,5 @@
 # nginx-tls: конфиг цел, сертификаты живы, витрины отвечают через те же порты, что видят клиенты.
-: "${VK_NAMES:?}" "${VK_ROLE:?}" "${VK_XHTTP_PORT:=4443}"
+: "${VK_NAMES:?}" "${VK_ROLE:?}" "${VK_XHTTP_PORT:=443}"
 : "${VK_TUNNEL_NAME:=${VK_NAMES%% *}}"
 nginx -t -q 2>/dev/null || die "nginx -t не проходит"
 systemctl is-active -q nginx || die "nginx не запущен"
@@ -11,7 +11,7 @@ for n in $VK_NAMES; do
   r=$(curl -s -m 10 -o /dev/null -w '%{http_code} %{redirect_url}' --resolve "$n:80:127.0.0.1" "http://$n/x")
   [ "$r" = "301 https://$n/x" ] || die "http://$n/ не уводит на https ($r)"
 done
-if [ "$VK_ROLE" != exit ]; then
+if [ "$VK_ROLE" != exit ] && [ "$VK_XHTTP_PORT" != 443 ]; then
   [ "$(code "$VK_TUNNEL_NAME" "$VK_XHTTP_PORT")" = 200 ] || die "https://$VK_TUNNEL_NAME:$VK_XHTTP_PORT/ не отвечает 200"
 fi
 f=$(nft list chain inet vpnkit_fw input)

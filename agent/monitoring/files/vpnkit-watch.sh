@@ -65,11 +65,22 @@ certs() {
 
 backup_fresh() {
   systemctl is-enabled --quiet vpnkit-backup.timer 2>/dev/null || return 0
-  local f age_h
+  local f age_h peer_cfg=""
   f=$(ls -1t /var/backups/vpnkit/*.tar.gz.age 2>/dev/null | head -1)
-  if [ -z "$f" ]; then chk backup "нет ни одной резервной копии"; return; fi
-  age_h=$(( ($(date +%s) - $(stat -c %Y "$f")) / 3600 ))
-  [ "$age_h" -lt 30 ] && chk backup "" || chk backup "резервной копии ${age_h} ч (ждали < 30)"
+  if [ -z "$f" ]; then chk backup "нет ни одной резервной копии"
+  else
+    age_h=$(( ($(date +%s) - $(stat -c %Y "$f")) / 3600 ))
+    [ "$age_h" -lt 30 ] && chk backup "" || chk backup "резервной копии ${age_h} ч (ждали < 30)"
+  fi
+  [ -r /etc/vpnkit/backup.conf ] && peer_cfg=$(sed -n 's/^PEER=//p' /etc/vpnkit/backup.conf | tr -d '"'\''' | head -1)
+  f=$(ls -1t /var/backups/vpnkit-peer/*.tar.gz.age 2>/dev/null | head -1)
+  if [ -n "$peer_cfg" ] || [ -n "$f" ]; then
+    if [ -z "$f" ]; then chk backup_peer "нет копии соседа в /var/backups/vpnkit-peer"
+    else
+      age_h=$(( ($(date +%s) - $(stat -c %Y "$f")) / 3600 ))
+      [ "$age_h" -lt 30 ] && chk backup_peer "" || chk backup_peer "копии соседа ${age_h} ч (ждали < 30)"
+    fi
+  fi
 }
 
 kernel_awg() {  # P-62: ядро, в которое узел загрузится следующим, обязано иметь модуль AmneziaWG

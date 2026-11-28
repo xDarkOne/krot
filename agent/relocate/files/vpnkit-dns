@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""vpnkit-dns — управление A/AAAA записями зоны Cloudflare при переезде узла.
+  vpnkit-dns list                       показать A/AAAA записи зоны
+  vpnkit-dns move СТАРЫЙ НОВЫЙ          показать, какие записи будут изменены (ничего не пишет)
+  vpnkit-dns move СТАРЫЙ НОВЫЙ --apply  изменить записи и проверить
+  vpnkit-dns ttl СЕК [--apply]          выставить TTL (например 60) для A-записей без проксирования
+
+Настройки: /etc/vpnkit/cloudflare.conf (права 600):
+  TOKEN=...            токен Cloudflare (Zone:DNS:Edit и Zone:Zone:Read)
+  ZONE=example.org     зона (если не задана — берётся DOMAIN из /etc/vpnkit/relocate.conf)
+  ZONE_ID=...          необязательно: если у токена нет права Zone:Read
+Код выхода: 0 — готово, 1 — ошибка, 3 — нет настроек.
+"""
+import ipaddress, json, os, subprocess, sys, urllib.error, urllib.request
+
+CONF = os.environ.get("VPNKIT_DNS_CONF", "/etc/vpnkit/cloudflare.conf")
+RELOC_CONF = os.environ.get("VPNKIT_RELOCATE_CONF", "/etc/vpnkit/relocate.conf")
+API = os.environ.get("CF_API", "https://api.cloudflare.com/client/v4")
+IFACE = os.environ.get("VPNKIT_DNS_IFACE", "awg0")
+
+
+def _read_kv(path):
+    c = {}
+    if not os.path.isfile(path):
+        return c
+    for l in open(path, encoding="utf-8"):
+        l = l.strip()
+        if l and not l.startswith("#") and "=" in l:
+            k, v = l.split("=", 1)
+            c[k.strip()] = v.strip().strip("\"'")
+    return c
+
+
+def load():
+    c = _read_kv(CONF)
+    if not c.get("TOKEN"):
+        print(f"нет настроек Cloudflare ({CONF}, строка TOKEN=...)", file=sys.stderr)
+        sys.exit(3)
+    if not c.get("ZONE") and not c.get("ZONE_ID"):
+        dom = _read_kv(RELOC_CONF).get("DOMAIN", "")
+        if dom:
+            c["ZONE"] = dom
+    return c
+
+
+def _direct(tok, method, path, body):
+    req = urllib.request.Request(
+        API + path,
+        method=method,
+        data=None if body is None else json.dumps(body).encode(),
+        headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        try:
+            return json.load(e)
+        except Exception:
+            return {"success": False, "errors": [{"message": f"HTTP {e.code}"}]}
+
+
+def _via_iface(tok, method, path, body):
+    cmd = [
+        "curl", "-s", "-m", "20", "--interface", IFACE, "-X", method,
+        "-H", "Authorization: Bearer " + tok,
+        "-H", "Content-Type: application/json",
+    ]
+    if body is not None:
+        cmd += ["--data", json.dumps(body)]
+    out = subprocess.run(cmd + [API + path], capture_output=True, text=True, timeout=30).stdout
+    return json.loads(out)
+
+
+def call(tok, method, path, body=None):
+    try:
+        d = _direct(tok, method, path, body)
+    except Exception as e:
+        d = None
+        err = str(e)
+        if IFACE and os.path.isdir(f"/sys/class/net/{IFACE}"):
+            try:
+                d = _via_iface(tok, method, path, body)
+            except Exception as e2:
+                err += f"; через {IFACE}: {e2}"
+        if d is None:
+            d = {"success": False, "errors": [{"message": err}]}
+    if not d.get("success"):
+        msg = "; ".join(x.get("message", "?") for x in d.get("errors", [])) or "неизвестная ошибка"
+        raise RuntimeError(f"Cloudflare {method} {path.split('?')[0]}: {msg}")
+    return d
+
+
+def zone_id(c):
+    if c.get("ZONE_ID"):
+        return c["ZONE_ID"]
+    z = c.get("ZONE", "")
+    if not z:
+        raise RuntimeError("не задана зона ZONE=... в /etc/vpnkit/cloudflare.conf")
+    r = call(c["TOKEN"], "GET", f"/zones?name={z}")["result"]
+    if not r:
+        raise RuntimeError(f"зона {z} не найдена (или у токена нет права Zone:Read — тогда впиши ZONE_ID=...)")
+    return r[0]["id"]
+
+
+def records(c, zid, **flt):
+    q = "&".join(f"{k}={v}" for k, v in flt.items())
+    return call(c["TOKEN"], "GET", f"/zones/{zid}/dns_records?per_page=500" + ("&" + q if q else ""))["result"]
+
+
+def main(a):
+    if not a or a[0] not in ("list", "move", "ttl"):
+        print(__doc__.strip().split("\n\n")[0])
+        return 2
+    c = load()
+    zid = zone_id(c)
+    if a[0] == "list":
+        for r in sorted(records(c, zid), key=lambda r: (r["type"], r["name"])):
+            if r["type"] in ("A", "AAAA"):
+                print(f"{r['name']:30} {r['type']:5} {r['content']:40} proxied={r.get('proxied')} ttl={r.get('ttl')}")
+        return 0
+    args = [x for x in a[1:] if x != "--apply"]
+    apply_ = "--apply" in a
+    if a[0] == "ttl":
+        if len(args) != 1 or not args[0].isdigit() or int(args[0]) < 60:
+            print("использование: vpnkit-dns ttl <>=60> [--apply]", file=sys.stderr)
+            return 2
+        want = int(args[0])
+        todo = [r for r in records(c, zid, type="A") if not r.get("proxied") and r.get("ttl") != want]
+        if not todo:
+            print(f"у всех A-записей без проксирования уже ttl={want}")
+            return 0
+        for r in todo:
+            print(f"{r['name']}  A  {r['content']}  ttl {r.get('ttl')} -> {want}")
+        if not apply_:
+            print("(пробный прогон: ничего не изменено; добавь --apply)")
+            return 0
+        bad = 0
+        for r in todo:
+            try:
+                call(c["TOKEN"], "PATCH", f"/zones/{zid}/dns_records/{r['id']}", {"ttl": want})
+                print(f"готово: {r['name']}")
+            except RuntimeError as e:
+                bad += 1
+                print(f"ОШИБКА: {e}", file=sys.stderr)
+        return 1 if bad else 0
+    if len(args) != 2:
+        print("использование: vpnkit-dns move СТАРЫЙ НОВЫЙ [--apply]", file=sys.stderr)
+        return 2
+    old, new = args
+    try:
+        vo, vn = ipaddress.ip_address(old), ipaddress.ip_address(new)
+    except ValueError as e:
+        print(f"не адрес: {e}", file=sys.stderr)
+        return 2
+    if vo.version != vn.version:
+        print("старый и новый адрес разных семейств", file=sys.stderr)
+        return 2
+    typ = "A" if vo.version == 4 else "AAAA"
+    todo = records(c, zid, type=typ, content=old)
+    if not todo:
+        print(f"записей {typ} со значением {old} в зоне нет — переносить нечего")
+        return 0
+    for r in todo:
+        print(f"{r['name']}  {typ}  {old} -> {new}  (proxied={r.get('proxied')}, ttl={r.get('ttl')})")
+    if not apply_:
+        print("(пробный прогон: ничего не изменено; добавь --apply)")
+        return 0
+    bad = 0
+    for r in todo:
+        try:
+            call(c["TOKEN"], "PATCH", f"/zones/{zid}/dns_records/{r['id']}", {"content": new})
+            print(f"готово: {r['name']}")
+        except RuntimeError as e:
+            bad += 1
+            print(f"ОШИБКА: {e}", file=sys.stderr)
+    left = [r["name"] for r in records(c, zid, type=typ, content=old)]
+    if left:
+        bad += 1
+        print("остались на старом адресе: " + ", ".join(left), file=sys.stderr)
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except RuntimeError as e:
+        print(f"ОШИБКА: {e}", file=sys.stderr)
+        sys.exit(1)

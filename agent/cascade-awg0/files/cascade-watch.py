@@ -68,7 +68,7 @@ def log(message):
 def ping(interface, peer, count="3"):
     family = "-6" if ":" in peer else "-4"
     args = ["-I", interface] if interface else []
-    return command("ping", family, *args, "-q", "-c", count, "-i", "0.3", "-W", "1", peer).returncode == 0
+    return command("ping", family, *args, "-q", "-c", count, "-i", "0.3", "-W", "2", peer).returncode == 0
 
 
 def tcp_probe(host, port):

@@ -35,7 +35,7 @@ name="$NODE-$ts"
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 
 # 1. целостные копии баз SQLite (живые базы с WAL нельзя просто tar-ить)
-mkdir -p "$tmp/sqlite"
+mkdir -p "$tmp/sqlite" "$tmp/meta"
 for db in $SQLITE; do
   [ -f "$db" ] || continue
   python3 - "$db" "$tmp/sqlite/$(echo "$db" | tr / _)" <<'EOF'
@@ -45,6 +45,32 @@ dst = sqlite3.connect(sys.argv[2])
 src.backup(dst); dst.close(); src.close()
 EOF
 done
+
+# 1а. метаданные узла для восстановления на чистый VPS (пакеты, юниты, версии)
+{
+  echo "NODE=$NODE"
+  echo "HOST=$(hostname -f 2>/dev/null || hostname)"
+  echo "DATE=$(date -Is)"
+  echo "KERNEL=$(uname -r)"
+  grep -E '^(PRETTY_NAME|VERSION_ID|VERSION_CODENAME)=' /etc/os-release 2>/dev/null || true
+} > "$tmp/meta/node.txt"
+apt-mark showmanual 2>/dev/null | sort > "$tmp/meta/dpkg-manual.txt" || true
+systemctl list-unit-files --state=enabled --no-legend 2>/dev/null | awk '{print $1}' | sort > "$tmp/meta/enabled-units.txt" || true
+{
+  [ -x /usr/local/bin/xray ] && echo "xray=$(/usr/local/bin/xray version 2>/dev/null | head -1)"
+  command -v sing-box >/dev/null 2>&1 && echo "sing-box=$(sing-box version 2>/dev/null | head -1)"
+  command -v awg >/dev/null 2>&1 && echo "awg=$(awg --version 2>/dev/null | head -1)"
+  [ -f /sys/module/amneziawg/version ] && echo "amneziawg-kmod=$(cat /sys/module/amneziawg/version 2>/dev/null)"
+  [ -f /opt/mtproxyl/engine/.version ] && echo "telemt=$(cat /opt/mtproxyl/engine/.version 2>/dev/null)"
+  [ -f /opt/mtproxyl/settings.conf ] && grep -E '^(SCRIPT_VERSION|ENGINE_VERSION)=' /opt/mtproxyl/settings.conf 2>/dev/null || true
+} > "$tmp/meta/versions.txt" 2>/dev/null || true
+{
+  ip -br a 2>/dev/null || true
+  echo "--- routes v4 ---"
+  ip -4 route show 2>/dev/null || true
+  echo "--- routes v6 ---"
+  ip -6 route show 2>/dev/null || true
+} > "$tmp/meta/network.txt"
 
 # 2. список путей и исключений (шаблоны НЕ раскрывать как маски файлов)
 set -f
@@ -56,7 +82,7 @@ set +f
 
 # 3. архив → шифрование; открытый текст на диск не пишется
 set +o pipefail
-tar czf - --warning=no-file-changed "${ex[@]}" "${list[@]}" -C "$tmp" sqlite 2>"$tmp/tar.err" | age -R "$RCPT" -o "$OUT/$name.tar.gz.age.part"
+tar czf - --warning=no-file-changed "${ex[@]}" "${list[@]}" -C "$tmp" sqlite meta 2>"$tmp/tar.err" | age -R "$RCPT" -o "$OUT/$name.tar.gz.age.part"
 rc=("${PIPESTATUS[@]}")
 set -o pipefail
 { grep -vE 'Removing leading|socket ignored' "$tmp/tar.err" || true; } | head -5 | while read -r l; do log "tar: $l"; done

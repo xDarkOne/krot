@@ -17,8 +17,15 @@ if [ "$VK_ROLE" = entry ] || [ "$VK_ROLE" = exit ]; then
   modprobe nf_conntrack
   current_limit=$(sysctl -n net.netfilter.nf_conntrack_max)
   printf '%s\n' "$current_limit" > "$VK_RUN/conntrack.before"
-  limit=$((current_limit > 32768 ? current_limit : 32768))
-  printf 'net.netfilter.nf_conntrack_max = %s\n' "$limit" | put /etc/sysctl.d/99-vpnkit-conntrack.conf 644
+  limit=$((current_limit > 65536 ? current_limit : 65536))
+  cat <<EOF | put /etc/sysctl.d/99-vpnkit-conntrack.conf 644
+# vpnkit base-host: запас conntrack и разумные таймауты под высокую нагрузку
+net.netfilter.nf_conntrack_max = $limit
+net.netfilter.nf_conntrack_tcp_timeout_established = 7200
+net.netfilter.nf_conntrack_tcp_timeout_time_wait = 30
+net.netfilter.nf_conntrack_udp_timeout = 30
+net.netfilter.nf_conntrack_udp_timeout_stream = 60
+EOF
 fi
 {
   echo "# vpnkit base-host"
@@ -27,6 +34,12 @@ fi
   echo "net.ipv4.conf.default.rp_filter=2"
   echo "net.core.default_qdisc=fq"
   echo "net.ipv4.tcp_congestion_control=bbr"
+  echo "net.core.rmem_default=2097152"
+  echo "net.core.wmem_default=2097152"
+  echo "net.core.rmem_max=33554432"
+  echo "net.core.wmem_max=33554432"
+  echo "net.core.optmem_max=1048576"
+  echo "net.core.netdev_max_backlog=16384"
   echo "vm.swappiness=10"
   echo "vm.vfs_cache_pressure=50"
   # вход (entry или один сервер): службы слушают адреса туннелей, которые появляются позже (P-05)
@@ -35,6 +48,14 @@ fi
 } | put /etc/sysctl.d/99-vpnkit.conf 644
 sysctl -q --system >/dev/null
 say "sysctl применён"
+
+# --- автоперезагрузка при kernel panic через 10 с (VPS не зависает намертво)
+if [ -d /etc/default/grub.d ]; then
+  printf 'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT panic=10"\n' | put /etc/default/grub.d/98-vpnkit-panic.cfg 644
+  if grep -qxF /etc/default/grub.d/98-vpnkit-panic.cfg "$VK_RUN/changed.list" 2>/dev/null && command -v update-grub >/dev/null 2>&1; then
+    update-grub >/dev/null 2>&1 || true
+  fi
+fi
 
 # --- swap: если всего меньше 1 ГБ — добавить файл до VK_SWAP_MB.
 # Свой swap хостера (часто /swapfile на 512 МБ) не трогаем: добавляем второй файл.
@@ -92,6 +113,7 @@ table inet vpnkit_fw {
 	}
 	chain forward {
 		type filter hook forward priority filter; policy drop;
+		tcp flags & (syn | rst) == syn tcp option maxseg size set rt mtu
 		ct state established,related accept
 	}
 	chain output {

@@ -107,7 +107,7 @@ func Ensure(ctx context.Context, token, domain string, want map[string]string) (
 		}
 		switch {
 		case len(have) == 0:
-			body := map[string]any{"type": "A", "name": name, "content": ip, "ttl": 1, "proxied": false,
+			body := map[string]any{"type": "A", "name": name, "content": ip, "ttl": 60, "proxied": false,
 				"comment": "krot"}
 			if err := c.do(ctx, "POST", "/zones/"+zone+"/dns_records", body, nil); err != nil {
 				return out, fmt.Errorf("%s: %w", name, err)

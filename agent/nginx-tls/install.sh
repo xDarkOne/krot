@@ -3,7 +3,7 @@
 # Параметры: VK_NAMES (через пробел; первое — основное), VK_TUNNEL_NAME, VK_HOST, VK_ROLE,
 # VK_EMAIL, VK_XHTTP_PORT, VK_SITE_{LANG,TITLE,TAGLINE,P1,P2}.
 # Описание — docs/20-server-modules/nginx-tls.md
-: "${VK_NAMES:?}" "${VK_HOST:?}" "${VK_ROLE:?}" "${VK_EMAIL:=}" "${VK_XHTTP_PORT:=4443}"
+: "${VK_NAMES:?}" "${VK_HOST:?}" "${VK_ROLE:?}" "${VK_EMAIL:=}" "${VK_XHTTP_PORT:=443}"
 : "${VK_TUNNEL_NAME:=${VK_NAMES%% *}}"
 : "${VK_SITE_LANG:=en}" "${VK_SITE_TITLE:?}" "${VK_SITE_TAGLINE:=}" "${VK_SITE_P1:=}" "${VK_SITE_P2:=}"
 [ -s "$VK_RUN/src/index.html" ] || die "нет шаблона витрины от пульта"
@@ -17,8 +17,8 @@ systemctl enable -q nginx
 if [ -e /etc/nginx/sites-enabled/default ]; then snapshot /etc/nginx/sites-enabled/default; rm -f /etc/nginx/sites-enabled/default; fi
 mkdir -p /var/www/acme /etc/nginx/vpnkit.d /etc/nginx/stream.d
 
-# --- фаервол: 80 (ACME, 301), 443, на entry ещё порт XHTTP
-ports="80, 443"; [ $entry = 1 ] && ports="$ports, $VK_XHTTP_PORT"
+# --- фаервол: 80 (ACME, 301), 443, плюс отдельный порт XHTTP, только если он не 443
+ports="80, 443"; [ $entry = 1 ] && [ "$VK_XHTTP_PORT" != 443 ] && ports="$ports, $VK_XHTTP_PORT"
 cat <<EOF | put /etc/nftables.d/40-vpnkit-nginx.nft 644
 # vpnkit nginx-tls
 table inet vpnkit_fw {
@@ -89,6 +89,8 @@ for n in $VK_NAMES; do
     acme80 "$n"
     if [ $entry = 1 ]; then
       # TCP/443 разбирает stream (stream.d/vpnkit-443.conf); витрина — на петле
+      extra_xhttp=""
+      [ "$n" = "$VK_TUNNEL_NAME" ] && [ "$VK_XHTTP_PORT" = 443 ] && extra_xhttp="    include /etc/nginx/vpnkit.d/$n-xhttp-*.conf;"
       cat <<EOF
 
 server {
@@ -97,10 +99,28 @@ $H2ON
     server_name $n;
 $tls
     include /etc/nginx/vpnkit.d/$n-site-*.conf;
+$extra_xhttp
     location / { try_files \$uri \$uri/ =404; }
 }
 EOF
-      if [ "$n" = "$VK_TUNNEL_NAME" ]; then cat <<EOF
+      if [ "$n" = "$VK_TUNNEL_NAME" ]; then
+        if [ "$VK_XHTTP_PORT" = 443 ]; then
+          # Петлевой XHTTP-сервер для разбора SNI на 443 с proxy_protocol (когда на 443 также стоит MTProxy)
+          cat <<EOF
+
+server {
+    listen 127.0.0.1:4444 ssl$H2 proxy_protocol;
+$H2ON
+    set_real_ip_from 127.0.0.1;
+    real_ip_header proxy_protocol;
+    server_name $n;
+$tls
+    include /etc/nginx/vpnkit.d/$n-xhttp-*.conf;
+    location / { try_files \$uri \$uri/ =404; }
+}
+EOF
+        else
+          cat <<EOF
 
 server {
     listen $VK_XHTTP_PORT ssl$H2;
@@ -111,6 +131,7 @@ $tls
     location / { try_files \$uri \$uri/ =404; }
 }
 EOF
+        fi
       fi
     else
       cat <<EOF
@@ -142,7 +163,7 @@ fi
 # иначе повторная установка nginx-tls молча отрезала бы MTProxy
 put /usr/local/sbin/vpnkit-gen.py 755 < "$VK_RUN/src/vpnkit-gen.py"
 mkdir -p /etc/vpnkit; chmod 700 /etc/vpnkit
-printf '# vpnkit nginx-tls. Пишет пульт.\nSTREAM=%s\n' "$entry" | put /etc/vpnkit/nginx.env 600
+printf '# vpnkit nginx-tls. Пишет пульт.\nSTREAM=%s\nTUNNEL_NAME=%s\nXHTTP_PORT=%s\n' "$entry" "$VK_TUNNEL_NAME" "$VK_XHTTP_PORT" | put /etc/vpnkit/nginx.env 600
 snapshot /etc/nginx/stream.d/vpnkit-443.conf
 /usr/local/sbin/vpnkit-gen.py build >/dev/null
 nginx -t -q

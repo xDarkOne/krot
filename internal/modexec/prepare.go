@@ -506,9 +506,9 @@ const (
 	XrayVersion      = "26.11.9"
 	xraySHA256AMD64  = "b651f7e1d9966ee2c1b1ee1bf8b52c72771824d3065dce96bbc8bcc19ed95f82"
 	xraySHA256ARM64  = "64ed6858982a7f5eb85d88b811089063bd4f17561f4c8f44e0f1dc8e6f6430be"
-	SingBoxVersion   = "1.13.21"
-	singboxSHA256AMD = "274e76b7b21f74fecc1766ef8c70436bc182343254f3df37eab2b31d13b3920a"
-	singboxSHA256ARM = "69172987bd889aa044db2dcd8e886f3ced041dec33b9d4979dbfc016958526fc"
+	SingBoxVersion   = "1.14.6"
+	singboxSHA256AMD = "2e1c5c0f1e5d9323ea7cdecd41cd2f1cb68685e4161c4cb24068abd5248f0f31"
+	singboxSHA256ARM = "33fd6b3e2f2bce8cff52f81d71d43877fcd56871196c76754a56977f4c01163d"
 )
 
 // tunnelName — имя, на котором живут туннели: nginx-tls.tunnel_name или первое из names.
@@ -527,7 +527,7 @@ func xhttpPort(n *inventory.Node) string {
 	if v, ok := n.Modules["nginx-tls"]["xhttp_port"]; ok {
 		return fmt.Sprint(v)
 	}
-	return "4443"
+	return "443"
 }
 
 // prepareXray — пин, имя туннеля, случайные порты и пути (хранятся в секретах — не меняются
@@ -651,17 +651,17 @@ func prepareSubscriptions(n *inventory.Node, p map[string]string) (map[string]st
 // telemt — официальный релиз (sha256 архивов = их .sha256 в релизе). Код тот же, что в MTProxyL:
 // там 3.5.7 без патчей, собранный MTProxyL в своём образе (сверено 02.10.2026 по строкам бинарника).
 const (
-	TelemtVersion   = "3.5.7"
-	telemtSHA256AMD = "c88656514164dbae64aac68341548b95586a3898df851dad837973752e405864"
-	telemtSHA256ARM = "2cd4d501d0524de7deec0fa5de7665d784c653c50d03cdb90ce7b6b88bc270c7"
+	TelemtVersion   = "3.5.17"
+	telemtSHA256AMD = "0570762ddcd79530d666b09e955b955bb52c9e134cc8b8ed1a0f50ad28d58a0e"
+	telemtSHA256ARM = "f0d3d06d029f2b21dc66a44069bcc7bd20d32fcb34b5867c5250cee647785de6"
 )
 
 // MTProxyL (github.com/Liafanx/MTProxyL) — вид MTProxy по умолчанию:
 // бот, панель, WEB Proxy, перезапуск при падении DC, проверка доступности. Ставится по тегу,
 // движок — бинарник telemt под systemd (без Docker), версия закреплена.
 const (
-	MTProxyLTag    = "v1.6.37"
-	MTProxyLEngine = "3.5.13"
+	MTProxyLTag    = "v1.8.7"
+	MTProxyLEngine = "3.5.17"
 )
 
 // MTProxyBotTokenKey — токен бота MTProxyL в хранилище (свой бот: оповещения krot при

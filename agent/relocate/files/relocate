@@ -1,11 +1,20 @@
 #!/bin/bash
 # relocate: мастер переезда узла на новый IP после клонирования у хостера.
 # Запусти на клоне (на сервере доступна и под именем relocate-ИМЯ_УЗЛА). Он сам найдёт старые адреса
-# в настройках, спросит новые (по умолчанию берёт то, что сейчас на сетевом интерфейсе), покажет, что
-# изменится, и после подтверждения применит через vpnkit-reip. Ключ -y — без вопросов подтверждения
-# (адреса берутся из значений по умолчанию или из переменных NEW_SELF, NEW_GW, NEW_PEER).
+# (IPv4 и IPv6) в настройках, спросит новые (по умолчанию берёт то, что сейчас на сетевом интерфейсе),
+# покажет, что изменится, и после подтверждения применит через vpnkit-reip.
+#   relocate -y                     без вопросов (NEW_SELF, NEW_GW, NEW_PEER, NEW_SELF6, NEW_GW6)
+#   relocate НОВЫЙ_IP [НОВЫЙ_IPv6]  поднять сеть на лету из VNC-консоли хостера и переехать без вопросов
+#   relocate --v6 АДРЕС [ШЛЮЗ6]     дописать IPv6 после выдачи у хостера (IPv4 не трогает)
 set -u
-YES=0; [ "${1:-}" = "-y" ] && YES=1
+YES=0; NETUP=0; V6ONLY=0
+[ "${1:-}" = "-y" ] && { YES=1; shift; }
+if [ "${1:-}" = "--v6" ]; then
+  [ -n "${2:-}" ] || { echo "использование: $(basename "$0") --v6 АДРЕС [ШЛЮЗ6]"; exit 2; }
+  YES=1; V6ONLY=1; NEW_SELF6=$2; [ -n "${3:-}" ] && NEW_GW6=$3
+elif [[ "${1:-}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+  YES=1; NETUP=1; NEW_SELF=$1; NEW_SELF6=${2:--}
+fi
 . /etc/vpnkit/relocate.conf 2>/dev/null || { echo "нет /etc/vpnkit/relocate.conf — модуль relocate не установлен"; exit 1; }
 : "${NODE:=узел}" "${ROLE:=}" "${DOMAIN:=}" "${PEER_NAME:=}"  # пишет Крот при установке
 case "$ROLE" in
@@ -14,14 +23,21 @@ case "$ROLE" in
   *) PEER_KEY="";;
 esac
 W=/etc/vpnkit/watch.conf
-DEV=$(ip -4 route show default | awk '{for(i=1;i<NF;i++) if($i=="dev") {print $(i+1); exit}}')
-cfg_self=$(awk '$1=="address"{sub("/.*","",$2); print $2}' /etc/network/interfaces | head -1)
-cfg_gw=$(awk '$1=="gateway"{print $2}' /etc/network/interfaces | head -1)
+I6=/etc/network/interfaces.d/ipv6-link
+I6_DIS=/etc/network/interfaces.d/ipv6-link.disabled
+CF=/etc/vpnkit/cloudflare.conf
+NODE_ADDR=/var/lib/vpnkit/node.addr
+DEV=$(ip -4 route show default 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="dev") {print $(i+1); exit}}')
+[ -n "$DEV" ] || DEV=$(awk '$1=="iface" && $2!="lo" && $3=="inet"{print $2; exit}' /etc/network/interfaces 2>/dev/null)
+DEV=${DEV:-eth0}
+
+cfg_self=$(awk '$1=="address"{sub("/.*","",$2); print $2}' /etc/network/interfaces 2>/dev/null | head -1)
+cfg_gw=$(awk '$1=="gateway"{print $2}' /etc/network/interfaces 2>/dev/null | head -1)
 cfg_peer=""; [ -n "$PEER_KEY" ] && cfg_peer=$(awk -F= -v k=$PEER_KEY '$1==k{print $2}' $W 2>/dev/null)
-live_self=$(ip -4 -br a show "$DEV" | awk '{sub("/.*","",$3); print $3}')
-live_gw=$(ip -4 route show default | awk '{for(i=1;i<NF;i++) if($i=="via") {print $(i+1); exit}}')
-echo "== переезд $NODE =="
-echo "в настройках:  адрес $cfg_self, шлюз $cfg_gw${PEER_NAME:+, $PEER_NAME $cfg_peer}"
+live_self=$(ip -4 -br a show "$DEV" 2>/dev/null | awk '{sub("/.*","",$3); print $3}')
+live_gw=$(ip -4 route show default 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="via") {print $(i+1); exit}}')
+echo "== переезд $NODE ($DEV) =="
+echo "в настройках:  адрес ${cfg_self:-?}, шлюз ${cfg_gw:-?}${PEER_NAME:+, $PEER_NAME ${cfg_peer:-?}}"
 echo "сейчас на $DEV: адрес ${live_self:-?}, шлюз ${live_gw:-?}"
 ask() { # ask "вопрос" "по умолчанию" переменная-окружения
   local v="${!3:-}"
@@ -31,21 +47,101 @@ ask() { # ask "вопрос" "по умолчанию" переменная-ок
   [[ $v =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || { echo "не похоже на IPv4: $v" >&2; exit 2; }
   echo "$v"
 }
+ask6() {
+  local v="${!3:-}"
+  if [ -z "$v" ]; then
+    if [ $YES = 1 ]; then v=$2; else read -r -p "$1 [${2:-нет}]: " v; v=${v:-$2}; fi
+  fi
+  if [ -n "$v" ] && [ "$v" != "-" ]; then
+    python3 -c 'import ipaddress,sys; assert ipaddress.ip_address(sys.argv[1]).version==6' "$v" 2>/dev/null \
+      || { echo "не похоже на IPv6: $v" >&2; exit 2; }
+  fi
+  echo "$v"
+}
+net6() { python3 -c 'import ipaddress,sys; print(ipaddress.ip_network(sys.argv[1]+"/"+sys.argv[2], strict=False).network_address)' "$1" "$2"; }
+
+if [ $V6ONLY = 1 ]; then NEW_SELF=${NEW_SELF:-$cfg_self}; NEW_GW=${NEW_GW:-$cfg_gw}; NEW_PEER=${NEW_PEER:-$cfg_peer}; fi
 new_self=$(ask "Новый адрес $NODE" "${live_self:-$cfg_self}" NEW_SELF) || exit 2
-new_gw=$(ask "Новый шлюз" "${live_gw:-$cfg_gw}" NEW_GW) || exit 2
+if [ $NETUP = 1 ] && [ "$new_self" != "$live_self" ]; then gwdef="${new_self%.*}.1"; else gwdef="${live_gw:-$cfg_gw}"; fi
+new_gw=$(ask "Новый шлюз" "$gwdef" NEW_GW) || exit 2
+
+if [ $NETUP = 1 ] && [ "$new_self" != "$live_self" ]; then
+  [ -z "${SSH_CONNECTION:-}" ] || { echo "Это ssh-сессия: смена адреса оборвёт её. Запусти из VNC-консоли хостера."; exit 2; }
+  plen=$(awk '$1=="address" && $2 ~ "/"{sub(".*/","",$2); print $2; exit}' /etc/network/interfaces 2>/dev/null); plen=${plen:-24}
+  old_self=$live_self; old_gw=$live_gw
+  echo "== поднимаю сеть на лету: $new_self/$plen, шлюз $new_gw =="
+  ip -4 addr flush dev "$DEV"; ip addr add "$new_self/$plen" dev "$DEV"; ip route replace default via "$new_gw" dev "$DEV" onlink
+  sleep 2
+  if ! ping -c2 -W2 -q "$new_gw" >/dev/null 2>&1; then
+    echo "Шлюз $new_gw не отвечает — возвращаю прежний адрес."
+    ip -4 addr flush dev "$DEV"; [ -n "$old_self" ] && ip addr add "$old_self/$plen" dev "$DEV"
+    [ -n "$old_gw" ] && ip route replace default via "$old_gw" dev "$DEV" onlink
+    exit 1
+  fi
+  live_self=$new_self; live_gw=$new_gw
+fi
+
 new_peer="$cfg_peer"; [ -n "$cfg_peer" ] && { new_peer=$(ask "Новый адрес $PEER_NAME (Enter — не менялся)" "$cfg_peer" NEW_PEER) || exit 2; }
 MAPS=(); PEERMAPS=()
-[ "$new_self" != "$cfg_self" ] && { MAPS+=(--map "$cfg_self" "$new_self"); PEERMAPS+=(--map "$cfg_self" "$new_self"); }
-[ "$new_gw" != "$cfg_gw" ] && MAPS+=(--map "$cfg_gw" "$new_gw")
+[ -n "$cfg_self" ] && [ "$new_self" != "$cfg_self" ] && { MAPS+=(--map "$cfg_self" "$new_self"); PEERMAPS+=(--map "$cfg_self" "$new_self"); }
+[ -n "$cfg_gw" ] && [ "$new_gw" != "$cfg_gw" ] && MAPS+=(--map "$cfg_gw" "$new_gw")
 [ -n "$cfg_peer" ] && [ "$new_peer" != "$cfg_peer" ] && { MAPS+=(--map "$cfg_peer" "$new_peer"); PEERMAPS+=(--map "$cfg_peer" "$new_peer"); }
-[ ${#MAPS[@]} -gt 0 ] || { echo "Адреса не менялись — делать нечего."; exit 0; }
+
+# --- IPv6 (если используется ipv6-link) ---
+DISABLE_I6=0; RESTORE_I6=0; I6_SRC=""
+if [ -f "$I6" ]; then I6_SRC="$I6"
+elif [ -f "$I6_DIS" ]; then I6_SRC="$I6_DIS"; [ "$V6ONLY" = 1 ] && RESTORE_I6=1
+fi
+if [ -n "$I6_SRC" ]; then
+  full=$(awk '$1=="address"{print $2}' "$I6_SRC" | head -1)
+  cfg_self6=${full%/*}; cfg_plen=${full#*/}; [ "$cfg_plen" = "$full" ] && cfg_plen=64
+  rt=$(grep -E 'post-up.*ip -6 route replace' "$I6_SRC" | head -1 || true)
+  cfg_gw6=$(sed -n 's/.* via \([^ ]*\) dev.*/\1/p' <<<"$rt")
+  cfg_selfnet6=$(net6 "$cfg_self6" "$cfg_plen")
+  live_self6=$(ip -6 -br a show "$DEV" scope global 2>/dev/null | awk '{sub("/.*","",$3); print $3; exit}')
+  new_self6=$(ask6 "Новый IPv6 $NODE ('-' — временно отключить IPv6)" "${live_self6:-$cfg_self6}" NEW_SELF6) || exit 2
+  if [ "$new_self6" = "-" ]; then
+    [ -f "$I6" ] && DISABLE_I6=1
+  else
+    [ "$I6_SRC" = "$I6_DIS" ] && RESTORE_I6=1
+    new_gw6=$(ask6 "Новый IPv6-шлюз" "$cfg_gw6" NEW_GW6) || exit 2
+    new_selfnet6=$(net6 "$new_self6" "$cfg_plen")
+    if [ "$new_self6" != "$cfg_self6" ]; then
+      MAPS+=(--map "$cfg_self6" "$new_self6"); PEERMAPS+=(--map "$cfg_self6" "$new_self6")
+      [ "$new_selfnet6" != "$cfg_selfnet6" ] && { MAPS+=(--map "$cfg_selfnet6" "$new_selfnet6"); PEERMAPS+=(--map "$cfg_selfnet6" "$new_selfnet6"); }
+    fi
+    [ -n "$new_gw6" ] && [ "$new_gw6" != "-" ] && [ "$new_gw6" != "$cfg_gw6" ] && MAPS+=(--map "$cfg_gw6" "$new_gw6")
+  fi
+fi
+
+[ ${#MAPS[@]} -gt 0 ] || [ $DISABLE_I6 = 1 ] || [ $RESTORE_I6 = 1 ] || { echo "Адреса не менялись — делать нечего."; exit 0; }
 echo; echo "-- что будет изменено:"
-/usr/local/sbin/vpnkit-reip "${MAPS[@]}"
+[ $RESTORE_I6 = 1 ] && echo "ipv6-link: будет восстановлен из $I6_DIS"
+[ $DISABLE_I6 = 1 ] && echo "ipv6-link: будет временно отключён ($I6 -> $I6_DIS)"
+[ ${#MAPS[@]} -gt 0 ] && /usr/local/sbin/vpnkit-reip "${MAPS[@]}"
+DO_DNS=0; [ -n "$cfg_self" ] && [ "$new_self" != "$cfg_self" ] && [ -r "$CF" ] && [ -x /usr/local/sbin/vpnkit-dns ] && DO_DNS=1
+if [ $DO_DNS = 1 ]; then
+  echo; echo "-- DNS (Cloudflare):"
+  /usr/local/sbin/vpnkit-dns move "$cfg_self" "$new_self" || echo "(предпросмотр DNS не удался — проверь $CF)"
+fi
+
 if [ $YES = 0 ]; then read -r -p "Применить? [y/N]: " a; [ "$a" = y ] || [ "$a" = Y ] || { echo "отменено"; exit 0; }; fi
-/usr/local/sbin/vpnkit-reip "${MAPS[@]}" --apply
+
+[ $RESTORE_I6 = 1 ] && [ -f "$I6_DIS" ] && mv "$I6_DIS" "$I6"
+[ ${#MAPS[@]} -gt 0 ] && /usr/local/sbin/vpnkit-reip "${MAPS[@]}" --apply
+if [ $DISABLE_I6 = 1 ] && [ -f "$I6" ]; then
+  mv "$I6" "$I6_DIS"
+  ip -6 addr flush dev "$DEV" scope global 2>/dev/null || true
+  echo "ipv6: $I6 отключён (-> $I6_DIS)"
+fi
+if [ $V6ONLY = 0 ]; then
+  mkdir -p "$(dirname "$NODE_ADDR")"
+  echo "V4=$new_self" > "$NODE_ADDR"
+fi
+
 if [ ${#PEERMAPS[@]} -gt 0 ] && [ -n "$PEER_NAME" ]; then
   echo; echo "-- сосед $PEER_NAME: ему нужны те же замены адресов"
-  tun=$(awk -F= '$1=="PEER_TUN"{print $2}' $W)
+  tun=$(awk -F= '$1=="PEER_TUN"{print $2}' $W 2>/dev/null)
   ok=0
   for t in "$tun" "$new_peer"; do
     [ -n "$t" ] || continue
@@ -58,8 +154,24 @@ if [ ${#PEERMAPS[@]} -gt 0 ] && [ -n "$PEER_NAME" ]; then
   done
   [ $ok = 1 ] || echo "Не выполнено автоматически. На $PEER_NAME запусти:  vpnkit-reip ${PEERMAPS[*]} --apply   (или relocate на нём)"
 fi
+
+DNS_DONE=0
+if [ $DO_DNS = 1 ]; then
+  go=0
+  if [ $YES = 1 ]; then go=1
+  else
+    echo; read -r -p "Перенести записи DNS в Cloudflare на $new_self? [y/N]: " a; { [ "$a" = y ] || [ "$a" = Y ]; } && go=1
+  fi
+  if [ $go = 1 ]; then
+    /usr/local/sbin/vpnkit-dns move "$cfg_self" "$new_self" --apply && DNS_DONE=1 || echo "DNS перенесён не полностью"
+  fi
+fi
+
 echo
 echo "Осталось:"
-echo " 1) у регистратора направить на $new_self записи домена ${DOMAIN:-узла} (и его поддоменов, смотрящих на этот сервер)"
-[ "$new_self" != "$live_self" ] && echo " 2) сеть пока не перенастроена: на $DEV сейчас ${live_self:-?}, перезагрузи сервер (reboot)"
-[ "$new_self" = "$live_self" ] && echo " 2) адрес на $DEV уже совпадает с настройками; перезагрузка не обязательна"
+if [ $V6ONLY = 0 ]; then
+  if [ $DNS_DONE = 1 ]; then echo " 1) DNS в Cloudflare уже переключён (TTL 60с)"
+  else echo " 1) у регистратора направить на $new_self записи домена ${DOMAIN:-узла} (или настроить $CF и выполнить vpnkit-dns move $cfg_self $new_self --apply)"; fi
+  [ "$new_self" != "$live_self" ] && echo " 2) сеть пока не перенастроена: на $DEV сейчас ${live_self:-?}, перезагрузи сервер (reboot)"
+  [ "$new_self" = "$live_self" ] && echo " 2) адрес на $DEV уже совпадает с настройками; перезагрузка не обязательна"
+fi

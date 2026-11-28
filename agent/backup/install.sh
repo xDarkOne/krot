@@ -4,22 +4,26 @@
 : "${VK_NODE:?}" "${VK_RECIPIENT:?}" "${VK_TIME:=04:30}" "${VK_KEEP:=7}" "${VK_EXTRA_PATHS:=}" "${VK_SQLITE:=}"
 case "$VK_RECIPIENT" in age1*) ;; *) die "VK_RECIPIENT не похож на открытый ключ age";; esac
 [ -s "$VK_RUN/src/vpnkit-backup.sh" ] || die "нет файла vpnkit-backup.sh от пульта"
+[ -s "$VK_RUN/src/vpnkit-restore.sh" ] || die "нет файла vpnkit-restore.sh от пульта"
 apt_install age
 
 put /usr/local/sbin/vpnkit-backup.sh 755 < "$VK_RUN/src/vpnkit-backup.sh"
+put /usr/local/sbin/vpnkit-restore.sh 755 < "$VK_RUN/src/vpnkit-restore.sh"
 mkdir -p /etc/vpnkit; chmod 700 /etc/vpnkit
 echo "$VK_RECIPIENT" | put /etc/vpnkit/backup.recipients 600
 # всё, чем управляет vpnkit; несуществующее скрипт пропускает
 paths="/etc/amnezia /etc/wireguard /etc/nftables.conf /etc/nftables.d /etc/dnsmasq.d /etc/systemd/system
-/etc/sysctl.d /etc/modules-load.d /etc/ssh/sshd_config.d /root/.ssh /etc/fail2ban/jail.d /etc/vpnkit /var/lib/vpnkit/modules
-/var/lib/vpnkit/ru-nets.txt /usr/local/sbin /usr/local/lib/vpnkit/cascade/watch /etc/letsencrypt /etc/nginx /usr/local/etc/xray /etc/xray /etc/sing-box
-/var/www /etc/network/interfaces /etc/warp-ru /var/lib/warp-ru /etc/aivpn /var/lib/aivpn/masks /etc/csqtt /etc/traffic-guard.exempt $VK_EXTRA_PATHS"
+/etc/sysctl.d /etc/modules-load.d /etc/default/grub.d /etc/apt/apt.conf.d/20auto-upgrades /etc/ssh/sshd_config.d /root/.ssh /etc/fail2ban/jail.d /etc/vpnkit /var/lib/vpnkit
+/usr/local/sbin /usr/local/lib/vpnkit /usr/bin/awg /usr/bin/awg-quick /usr/src/amneziawg-* /etc/letsencrypt /etc/nginx /usr/local/etc/xray /etc/xray /etc/sing-box
+/var/www /etc/network/interfaces /etc/network/interfaces.d /etc/danted.conf /etc/warp-ru /var/lib/warp-ru /etc/aivpn /var/lib/aivpn/masks /etc/csqtt /etc/traffic-guard.exempt
+/etc/telemt /opt/mtproxyl /opt/mtproxyl-tgbot /opt/mtproxyl-zapret2 /usr/local/bin/mtproxyl-panel /etc/mtproxyl-panel /etc/mtproxyl-zapret2 /var/lib/mtproxyl-panel
+/etc/vpn-bot /var/lib/vpn-bot /opt/vpn-bot.py /opt/vpn-panel /opt/vpn-panel.py $VK_EXTRA_PATHS"
 cat <<EOF | put /etc/vpnkit/backup.conf 600
 # vpnkit backup ($VK_NODE). Пишет пульт; описание полей — /usr/local/sbin/vpnkit-backup.sh
 NODE=$VK_NODE
 PATHS="$(echo $paths)"
-EXCLUDES="etc/csqtt/csqtt.db* *./etc/csqtt/csqtt.db* *__pycache__* *.log *.log.[0-9]* */venv"
-SQLITE="/etc/csqtt/csqtt.db /var/lib/vpnkit/panel.db $VK_SQLITE"
+EXCLUDES="etc/csqtt/csqtt.db* *./etc/csqtt/csqtt.db* */stats.db* */mtproxyl/backups */mtproxyl-zapret2/cache *__pycache__* *.log *.log.[0-9]* */venv"
+SQLITE="/etc/csqtt/csqtt.db /var/lib/vpnkit/panel.db /var/lib/vpn-bot/stats.db $VK_SQLITE"
 KEEP=$VK_KEEP
 PEER=""
 EOF

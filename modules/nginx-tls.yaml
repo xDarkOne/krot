@@ -25,7 +25,8 @@ params:
   note: почта для Let's Encrypt (необязательно)
 - name: xhttp_port
   type: port
-  default: 4443
+  default: 443
+  note: 443 (через stream SNI на петлевой 4444, без лишних портов) или отдельный порт (например 4443)
 secrets:
 - '<узел>/nginx-tls/site: вариант текста витрины'
 ports:

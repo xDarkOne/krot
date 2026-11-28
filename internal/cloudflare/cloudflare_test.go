@@ -42,6 +42,9 @@ func fake(t *testing.T, posted *[]string) *httptest.Server {
 			if b["proxied"] != false {
 				t.Error("запись создаётся с проксированием")
 			}
+			if b["ttl"] != float64(60) {
+				t.Errorf("ожидался ttl=60, получено %v", b["ttl"])
+			}
 			*posted = append(*posted, b["name"].(string))
 			ok(map[string]string{"id": "new"})
 		default:
